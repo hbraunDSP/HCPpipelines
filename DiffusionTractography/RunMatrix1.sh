@@ -16,8 +16,8 @@ StudyFolder=$1          # "$1" #Path to Generic Study folder
 Subject=$2              # "$2" #SubjectID
 
 #bindir=/home/stam/fsldev/ptx2  #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
-bindir_ptx=${FSLDIR}/bin
-bindir_fdtmerge=/home/range1-raid1/kjamison/fslgpu/fsl/bin
+bindir_ptx=${HCPPIPEDIR}/global/binaries
+bindir_fdtmerge=${HCPPIPEDIR}/global/binaries
 
 scriptsdir=${HCPPIPEDIR_dMRITract}
 TemplateFolder="${HCPPIPEDIR_Template}/91282_Greyordinates"
@@ -47,8 +47,10 @@ rm -rf $ResultsFolder/stop
 rm -rf $ResultsFolder/volseeds
 rm -rf $ResultsFolder/Mat1_seeds
 
-echo $ResultsFolder/L.roi.asc >> $ResultsFolder/stop
-echo $ResultsFolder/R.roi.asc >> $ResultsFolder/stop
+#echo $ResultsFolder/L.roi.asc >> $ResultsFolder/stop
+#echo $ResultsFolder/R.roi.asc >> $ResultsFolder/stop
+echo $ResultsFolder/pial.L.asc >> $ResultsFolder/stop
+echo $ResultsFolder/pial.R.asc >> $ResultsFolder/stop
 
 echo $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_LEFT >> $ResultsFolder/volseeds
 echo $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_RIGHT >> $ResultsFolder/volseeds

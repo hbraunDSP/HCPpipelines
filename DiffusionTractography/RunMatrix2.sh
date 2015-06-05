@@ -19,7 +19,8 @@ Subject=$2              # "$2" #SubjectID
 DistanceThreshold=$3
 DownsampleMat2Target=$4
 
-bindir=/home/stam/fsldev/ptx2  #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
+#bindir=/home/stam/fsldev/ptx2  #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
+bindir=${HCPPIPEDIR}/global/binaries
 scriptsdir=${HCPPIPEDIR_dMRITract}
 TemplateFolder="${HCPPIPEDIR_Template}/91282_Greyordinates"
 
@@ -52,8 +53,10 @@ rm -rf $ResultsFolder/stop
 rm -rf $ResultsFolder/volseeds
 rm -rf $ResultsFolder/Mat2_seeds
 
-echo $ResultsFolder/L.roi.asc >> $ResultsFolder/stop
-echo $ResultsFolder/R.roi.asc >> $ResultsFolder/stop
+#echo $ResultsFolder/L.roi.asc >> $ResultsFolder/stop
+#echo $ResultsFolder/R.roi.asc >> $ResultsFolder/stop
+echo $ResultsFolder/pial.L.asc >> $ResultsFolder/stop
+echo $ResultsFolder/pial.R.asc >> $ResultsFolder/stop
 
 echo $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_LEFT >> $ResultsFolder/volseeds
 echo $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_RIGHT >> $ResultsFolder/volseeds
@@ -94,8 +97,10 @@ if [ "$DistanceThreshold" == "-1" ]; then
     ${FSLDIR}/bin/imcp $ROIsFolder/Whole_Brain_Trajectory_ROI_2 ${ResultsFolder}/Mat2_target
 else 
 ######Create mask stripped from deep WM...
-    $FSLDIR/bin/surf2volume $ResultsFolder/L.roi.asc $StdRef $ResultsFolder/Lsurf_pial caret
-    $FSLDIR/bin/surf2volume $ResultsFolder/R.roi.asc $StdRef $ResultsFolder/Rsurf_pial caret
+    #$FSLDIR/bin/surf2volume $ResultsFolder/L.roi.asc $StdRef $ResultsFolder/Lsurf_pial caret
+    #$FSLDIR/bin/surf2volume $ResultsFolder/R.roi.asc $StdRef $ResultsFolder/Rsurf_pial caret
+    $FSLDIR/bin/surf2volume $ResultsFolder/pial.L.asc $StdRef $ResultsFolder/Lsurf_pial caret
+    $FSLDIR/bin/surf2volume $ResultsFolder/pial.R.asc $StdRef $ResultsFolder/Rsurf_pial caret
 
     $FSLDIR/bin/fslmaths $ResultsFolder/Lsurf_pial -add $ResultsFolder/Rsurf_pial -add $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_AMYGDALA_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_BRAIN_STEM -add $ResultsFolder/CIFTI_STRUCTURE_CAUDATE_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_CEREBELLUM_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_DIENCEPHALON_VENTRAL_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_HIPPOCAMPUS_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_PALLIDUM_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_PUTAMEN_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_THALAMUS_RIGHT -add $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_AMYGDALA_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_BRAIN_STEM -add $ResultsFolder/CIFTI_STRUCTURE_CAUDATE_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_CEREBELLUM_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_DIENCEPHALON_VENTRAL_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_HIPPOCAMPUS_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_PALLIDUM_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_PUTAMEN_LEFT -add $ResultsFolder/CIFTI_STRUCTURE_THALAMUS_LEFT $ResultsFolder/LRsurfvols
     ${FSLDIR}/bin/distancemap -m ${StdRef} -i ${ResultsFolder}/LRsurfvols -o ${ResultsFolder}/dist.nii.gz
