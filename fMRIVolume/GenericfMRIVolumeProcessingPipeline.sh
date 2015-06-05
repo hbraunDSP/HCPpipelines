@@ -58,6 +58,7 @@ MagnitudeInputName=`opts_GetOpt1 "--fmapmag" $@`  # Expects 4D volume with two 3
 PhaseInputName=`opts_GetOpt1 "--fmapphase" $@`  
 GEB0InputName=`opts_GetOpt1 "--fmapgeneralelectric" $@`
 DwellTime=`opts_GetOpt1 "--echospacing" $@`  
+TopupDwellTime=`opts_GetOpt1 "--SEechospacing" $@`  
 deltaTE=`opts_GetOpt1 "--echodiff" $@`  
 UnwarpDir=`opts_GetOpt1 "--unwarpdir" $@`  
 FinalfMRIResolution=`opts_GetOpt1 "--fmrires" $@`  
@@ -189,6 +190,7 @@ ${RUN} ${PipelineScripts}/DistortionCorrectionAndEPIToT1wReg_FLIRTBBRAndFreeSurf
     --SEPhaseNeg=${SpinEchoPhaseEncodeNegative} \
     --SEPhasePos=${SpinEchoPhaseEncodePositive} \
     --echospacing=${DwellTime} \
+    --SEechospacing=${TopupDwellTime} \
     --unwarpdir=${UnwarpDir} \
     --owarp=${T1wFolder}/xfms/${fMRI2strOutputTransform} \
     --biasfield=${T1wFolder}/${BiasField} \

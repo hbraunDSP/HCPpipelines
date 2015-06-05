@@ -38,6 +38,7 @@ Usage() {
   echo "             --SEPhaseNeg=<input spin echo negative phase encoding image>"
   echo "             --SEPhasePos=<input spin echo positive phase encoding image>"
   echo "             --echospacing=<effective echo spacing of fMRI image, in seconds>"
+  echo "             --SEechospacing=<effective echo spacing of spin echo image, in seconds>"
   echo "             --unwarpdir=<unwarping direction: x/y/z/-x/-y/-z>"
   echo "             --owarp=<output filename for warp of EPI to T1w>"
   echo "             --biasfield=<input bias field estimate image, in fMRI space>"
@@ -132,6 +133,7 @@ T1wBrainImage=`getopt1 "--t1brain" $@`
 SpinEchoPhaseEncodeNegative=`getopt1 "--SEPhaseNeg" $@`
 SpinEchoPhaseEncodePositive=`getopt1 "--SEPhasePos" $@`
 DwellTime=`getopt1 "--echospacing" $@`
+TopupDwellTime=`getopt1 "--SEechospacing" $@`
 MagnitudeInputName=`getopt1 "--fmapmag" $@`
 PhaseInputName=`getopt1 "--fmapphase" $@`
 GEB0InputName=`getopt1 "--fmapgeneralelectric" $@`
@@ -281,12 +283,13 @@ case $DistortionCorrection in
 
         # Use topup to distortion correct the scout scans
         #    using a blip-reversed SE pair "fieldmap" sequence
-        ${GlobalScripts}/TopupPreprocessingAll.sh \
+        ${GlobalScripts}/TopupPreprocessingAll_Unmatched.sh \
             --workingdir=${WD}/FieldMap \
             --phaseone=${SpinEchoPhaseEncodeNegative} \
             --phasetwo=${SpinEchoPhaseEncodePositive} \
             --scoutin=${ScoutInputName} \
             --echospacing=${DwellTime} \
+            --SEechospacing=${TopupDwellTime} \
             --unwarpdir=${UnwarpDir} \
             --owarp=${WD}/WarpField \
             --ojacobian=${WD}/Jacobian \
