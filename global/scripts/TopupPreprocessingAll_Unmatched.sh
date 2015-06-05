@@ -21,7 +21,7 @@ Usage() {
   echo "            --phasetwo=<second set of SE EPI images: with x PE direction (RL)>"
   echo "            --scoutin=<scout input image: should be corrected for gradient non-linear distortions>"
   echo "            --echospacing=<effective echo spacing of EPI>"
-  echo "            --SEechospacing=<effective echo spacing of SE Fieldmap image>"
+  echo "            [--SEechospacing=<effective echo spacing of SE Fieldmap image>]"
   echo "            --unwarpdir=<PE direction for unwarping: x/y/z/-x/-y/-z>"
   echo "            [--owarp=<output warpfield image: scout to distortion corrected SE EPI>]"
   echo "            [--ofmapmag=<output 'Magnitude' image: scout to distortion corrected SE EPI>]" 
@@ -266,6 +266,8 @@ ${FSLDIR}/bin/fslmaths ${WD}/TopupField -mul 6.283 ${WD}/TopupField
 ${FSLDIR}/bin/fslmaths ${WD}/Magnitudes.nii.gz -Tmean ${WD}/Magnitude.nii.gz
 ${FSLDIR}/bin/bet ${WD}/Magnitude ${WD}/Magnitude_brain -f 0.35 -m #Brain extract the magnitude image
 
+#1. If SpinEcho DwellTime != fMRI DwellTime, or if SBRef and SEPos/Neg have 
+# different resolutions, need to jump through some hoops to apply topup
 scoutdims=`${FSLDIR}/bin/fslinfo ${ScoutInputName} | grep -E "^dim[123][[:space:]]" | awk '{print $2}'`
 topupdims=`${FSLDIR}/bin/fslinfo ${WD}/Magnitude | grep -E "^dim[123][[:space:]]" | awk '{print $2}'`
 
@@ -288,17 +290,19 @@ else
 
 	${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Magnitude_brain -r ${WD}/Magnitude_brain -w ${WD}/FieldMap_InvWarp.nii.gz -o ${WD}/Magnitude_brain_warped
 
+	#Coreg "non-corrected" Mag to non-corrected scout and 
 	${FSLDIR}/bin/flirt -interp spline -dof 6 -in ${WD}/Magnitude_brain_warped -ref ${WD}/${ScoutBase} -out ${WD}/Magnitude_brain_warped2${ScoutBase} -omat ${WD}/FieldMap2${ScoutBase}.mat -searchrx -30 30 -searchry -30 30 -searchrz -30 30
 
-	###
+	#Apply coreg to fieldmap (rad/s) and jacobian (now in Scout space)
 	${FSLDIR}/bin/flirt -in ${WD}/TopupField.nii.gz -ref ${WD}/${ScoutBase} -applyxfm -init ${WD}/FieldMap2${ScoutBase}.mat -out ${WD}/FieldMap2${ScoutBase}
 	${FSLDIR}/bin/flirt -in ${WD}/Jacobian.nii.gz -ref ${WD}/${ScoutBase} -applyxfm -init ${WD}/FieldMap2${ScoutBase}.mat -out ${WD}/Jacobian2${ScoutBase}
 
-	# Convert to shift map then to warp field and unwarp the TXw
+	# Convert rad/s to Scout voxel shift map, then insert that into warpfield
 	${FSLDIR}/bin/fugue --loadfmap=${WD}/FieldMap2${ScoutBase} --dwell=${DwellTime} --saveshift=${WD}/FieldMap2${ScoutBase}_ShiftMap.nii.gz
 
 	${FSLDIR}/bin/convertwarp --relout --rel --ref=${WD}/${ScoutBase} --shiftmap=${WD}/FieldMap2${ScoutBase}_ShiftMap.nii.gz --shiftdir=${UnwarpDir} --out=${WD}/FieldMap2${ScoutBase}_Warp.nii.gz    
 
+	#copy new Scout-space files to expected locations and we're all good to go
 	${FSLDIR}/bin/immv ${WD}/FieldMap2${ScoutBase} ${WD}/TopupField
 	${FSLDIR}/bin/immv ${WD}/FieldMap2${ScoutBase}_Warp.nii.gz ${WD}/WarpField
 	${FSLDIR}/bin/immv ${WD}/Jacobian2${ScoutBase} ${WD}/Jacobian
