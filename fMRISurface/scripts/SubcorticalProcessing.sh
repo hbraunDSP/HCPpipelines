@@ -24,6 +24,9 @@ echo "${script_name}: SmoothingFWHM: ${SmoothingFWHM}"
 BrainOrdinatesResolution="$7"
 echo "${script_name}: BrainOrdinatesResolution: ${BrainOrdinatesResolution}"
 
+ForceGeneric="$8"
+echo "${script_name}: ForceGenericResampling: ${ForceGeneric}"
+
 VolumefMRI="${ResultsFolder}/${NameOffMRI}"
 echo "${script_name}: VolumefMRI: ${VolumefMRI}"
 
@@ -32,7 +35,7 @@ echo "${script_name}: Sigma: ${Sigma}"
 
 unset POSIXLY_CORRECT
 
-if [ 1 -eq `echo "$BrainOrdinatesResolution == $FinalfMRIResolution" | bc -l` ] ; then
+if [ 1 -eq `echo "$BrainOrdinatesResolution == $FinalfMRIResolution" | bc -l` ] && [ -z "${ForceGeneric}" ]; then
 	echo "${script_name}: Doing volume parcel resampling without first applying warp"
 	${CARET7DIR}/wb_command -volume-parcel-resampling "$VolumefMRI".nii.gz "$ROIFolder"/ROIs."$BrainOrdinatesResolution".nii.gz "$ROIFolder"/Atlas_ROIs."$BrainOrdinatesResolution".nii.gz $Sigma "$VolumefMRI"_AtlasSubcortical_s"$SmoothingFWHM".nii.gz -fix-zeros
 else
