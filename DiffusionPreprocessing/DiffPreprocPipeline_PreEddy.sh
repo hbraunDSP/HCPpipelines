@@ -70,7 +70,7 @@ source ${HCPPIPEDIR}/global/scripts/log.shlib     # log_ functions
 source ${HCPPIPEDIR}/global/scripts/version.shlib # version_ functions
 
 # Global default values
-DEFAULT_B0_MAX_BVAL=50
+DEFAULT_B0_MAX_BVAL=100
 
 # 
 # Function Description
