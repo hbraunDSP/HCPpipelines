@@ -6,7 +6,18 @@
 
 Usage() {
     echo ""
-    echo "Usage: mcflirt_basic <4dinput> <4doutput> [<scout_image> [<mcref_image>]]"
+    echo "Usage: mcflirt_orig.sh <4dinput> <4doutput> [<scout_image> [<mcref_image>]]"
+    echo ""
+    echo " If neither <scout_image> nor <mcref_image> is specified, a reference image"
+    echo "    will be generated automatically from volumes 10-20 in the input series."
+    echo ""
+    echo " If only <scout_image> is specified, motion correction will use <scout_image> "
+    echo "    for reference"
+    echo ""
+    echo " If both <scout_image> and <mcref_image> are specified, motion correction "
+    echo "    will use <mcref_image> as its reference, but an additional mcref->scout"
+    echo "    coregistration will be appended so that the final outputs are aligned"
+    echo "    with <scout_image>"
     echo ""
     exit
 }
@@ -88,4 +99,5 @@ ${FSLDIR}/bin/fslmaths ${output}_mask -Tmean -mul `$FSLDIR/bin/fslval ${output}_
 
 ${FSLDIR}/bin/imrm `${FSLDIR}/bin/imglob ${output}_mask????` ${output}_allones ${output}_ref
 /bin/rm -rf ${output}.mat ${mcref2scout} 
+
 

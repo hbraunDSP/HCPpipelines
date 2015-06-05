@@ -27,12 +27,15 @@ OutputfMRIBasename=`basename ${OutputfMRI}`
 
 # Do motion correction
 log_Msg "Do motion correction"
-if [ "x$MotionCorrectionType" != x ] && [ $MotionCorrectionType = mcflirt ]; then
+if [ "x$MotionCorrectionType" != x ] && [ $MotionCorrectionType = mcflirt1 ]; then
   numTR=`${FSLDIR}/bin/fslval $InputfMRI dim4`
-  mcref=`${FSLDIR}/bin/remove_ext ${WorkingDirectory}/${OutputfMRIBasename}_mcref`
+  mcref=`${FSLDIR}/bin/remove_ext ${WorkingDirectory}/${OutputfMRIBasename}`_mcref
   ${FSLDIR}/bin/fslroi ${InputfMRI} ${mcref} $((numTR/2)) 1
+  ${HCPPIPEDIR_Global}/mcflirt_orig.sh ${InputfMRI} ${WorkingDirectory}/${OutputfMRIBasename} ${Scout} ${mcref}
 
-  ${HCPPIPEDIR_Global}/mcflirt_basic.sh ${InputfMRI} ${WorkingDirectory}/${OutputfMRIBasename} ${Scout} ${mcref}
+elif [ "x$MotionCorrectionType" != x ] && [ $MotionCorrectionType = mcflirt ]; then
+  ${HCPPIPEDIR_Global}/mcflirt_orig.sh ${InputfMRI} ${WorkingDirectory}/${OutputfMRIBasename} ${Scout}
+
 else
   ${HCPPIPEDIR_Global}/mcflirt_acc.sh ${InputfMRI} ${WorkingDirectory}/${OutputfMRIBasename} ${Scout}
 fi
@@ -161,4 +164,5 @@ function DeriveUnBiased {
   mv ${out}_ ${out}
   rm $random
 }
+
 
