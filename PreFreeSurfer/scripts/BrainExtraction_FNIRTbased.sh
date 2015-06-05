@@ -93,6 +93,7 @@ ${FSLDIR}/bin/applywarp --rel --interp=spline --in="$Input" --ref="$Reference" -
 # Input and reference spaces are the same, using 2mm reference to save time
 ${FSLDIR}/bin/invwarp --ref="$Reference2mm" -w "$WD"/str2standard.nii.gz -o "$WD"/standard2str.nii.gz
 ${FSLDIR}/bin/applywarp --rel --interp=nn --in="$ReferenceMask" --ref="$Input" -w "$WD"/standard2str.nii.gz -o "$OutputBrainMask"
+${FSLDIR}/bin/fslmaths "$OutputBrainMask" -thr 0.5 -bin "$OutputBrainMask"
 ${FSLDIR}/bin/fslmaths "$Input" -mas "$OutputBrainMask" "$OutputBrainExtractedImage"
 
 echo " "
