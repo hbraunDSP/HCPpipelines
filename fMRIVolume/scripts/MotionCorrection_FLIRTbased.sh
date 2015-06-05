@@ -21,14 +21,22 @@ OutputfMRI="$4"
 OutputMotionRegressors="$5"
 OutputMotionMatrixFolder="$6"
 OutputMotionMatrixNamePrefix="$7"
+MotionCorrectionType="$8"
 
 OutputfMRIBasename=`basename ${OutputfMRI}`
 
-
-
 # Do motion correction
 log_Msg "Do motion correction"
-${HCPPIPEDIR_Global}/mcflirt_acc.sh ${InputfMRI} ${WorkingDirectory}/${OutputfMRIBasename} ${Scout}
+if [ "x$MotionCorrectionType" != x ] && [ $MotionCorrectionType = mcflirt ]; then
+  numTR=`${FSLDIR}/bin/fslval $InputfMRI dim4`
+  mcref=`${FSLDIR}/bin/remove_ext ${WorkingDirectory}/${OutputfMRIBasename}_mcref`
+  ${FSLDIR}/bin/fslroi ${InputfMRI} ${mcref} $((numTR/2)) 1
+
+  ${HCPPIPEDIR_Global}/mcflirt_basic.sh ${InputfMRI} ${WorkingDirectory}/${OutputfMRIBasename} ${Scout} ${mcref}
+else
+  ${HCPPIPEDIR_Global}/mcflirt_acc.sh ${InputfMRI} ${WorkingDirectory}/${OutputfMRIBasename} ${Scout}
+fi
+
 
 # Move output files about
 mv -f ${WorkingDirectory}/${OutputfMRIBasename}/mc.par ${WorkingDirectory}/${OutputfMRIBasename}.par

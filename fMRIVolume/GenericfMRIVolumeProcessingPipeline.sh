@@ -73,6 +73,7 @@ dof=`opts_GetOpt1 "--dof" $@`
 dof=`opts_DefaultOpt $dof 6`
 
 RUN=`opts_GetOpt1 "--printcom" $@`  # use ="echo" for just printing everything and not running the commands (default is to run)
+MotionCorrectionType=`opts_GetOpt1 "--mctype" $@`  # use = "flirt" to run FLIRT-based mcflirt_acc.sh, or "mcflirt" to run MCFLIRT-based mcflirt_basic.sh (default is "flirt")
 
 # Setup PATHS
 PipelineScripts=${HCPPIPEDIR_fMRIVol}
@@ -118,13 +119,13 @@ if [ ! -e "$fMRIFolder" ] ; then
   log_Msg "mkdir ${fMRIFolder}"
   mkdir "$fMRIFolder"
 fi
-cp "$fMRITimeSeries" "$fMRIFolder"/"$OrigTCSName".nii.gz
+${RUN} cp "$fMRITimeSeries" "$fMRIFolder"/"$OrigTCSName".nii.gz
 
 #Create fake "Scout" if it doesn't exist
 if [ $fMRIScout = "NONE" ] ; then
   ${RUN} ${FSLDIR}/bin/fslroi "$fMRIFolder"/"$OrigTCSName" "$fMRIFolder"/"$OrigScoutName" 0 1
 else
-  cp "$fMRIScout" "$fMRIFolder"/"$OrigScoutName".nii.gz
+  ${RUN} cp "$fMRIScout" "$fMRIFolder"/"$OrigScoutName".nii.gz
 fi
 
 #Gradient Distortion Correction of fMRI
@@ -164,7 +165,8 @@ ${RUN} "$PipelineScripts"/MotionCorrection_FLIRTbased.sh \
     "$fMRIFolder"/"$NameOffMRI"_mc \
     "$fMRIFolder"/"$MovementRegressor" \
     "$fMRIFolder"/"$MotionMatrixFolder" \
-    "$MotionMatrixPrefix" 
+    "$MotionMatrixPrefix" \
+    "$MotionCorrectionType"
 
 # EPI Distortion Correction and EPI to T1w Registration
 log_Msg "EPI Distortion Correction and EPI to T1w Registration"
