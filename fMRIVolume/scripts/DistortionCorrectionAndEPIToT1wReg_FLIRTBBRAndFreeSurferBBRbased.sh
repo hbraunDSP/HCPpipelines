@@ -13,6 +13,7 @@ FIELDMAP_METHOD_OPT="FIELDMAP"
 SIEMENS_METHOD_OPT="SiemensFieldMap"
 GENERAL_ELECTRIC_METHOD_OPT="GeneralElectricFieldMap"
 SPIN_ECHO_METHOD_OPT="TOPUP"
+RESUME_METHOD_OPT="RESUME"
 
 ################################################ SUPPORT FUNCTIONS ##################################################
 
@@ -61,6 +62,10 @@ Usage() {
   echo "               \"${GENERAL_ELECTRIC_METHOD_OPT}\""
   echo "                 use General Electric specific Gradient Echo Field Maps"
   echo "                 for readout distortion correction"
+  echo ""
+  echo "               \"${RESUME_METHOD_OPT}\""
+  echo "                 Use if fieldmap has already been generated"
+  echo "                 (ie: Just run EPItoT1wReg)"
   echo ""
   echo "             [--topupconfig=<topup config file>]"
   echo "             --ojacobian=<output filename for Jacobian image (in T1w space)>"
@@ -317,6 +322,11 @@ case $DistortionCorrection in
             ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -div ${BiasField} ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz 
         fi
 
+        ;;
+
+    ${RESUME_METHOD_OPT})
+
+        log_Msg "SKIPPING DISTORTION CORRECTION.  Hopefully already completed?"
         ;;
 
     *)
