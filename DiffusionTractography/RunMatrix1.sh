@@ -20,7 +20,7 @@ bindir_ptx=${HCPPIPEDIR}/global/binaries
 bindir_fdtmerge=${HCPPIPEDIR}/global/binaries
 
 scriptsdir=${HCPPIPEDIR_dMRITract}
-TemplateFolder="${HCPPIPEDIR_Template}/91282_Greyordinates"
+TemplateFolder="${HCPPIPEDIR_Templates}/91282_Greyordinates"
 
 # Hard-coded variables for now
 Nsamples=100

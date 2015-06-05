@@ -22,7 +22,7 @@ DownsampleMat2Target=$4
 #bindir=/home/stam/fsldev/ptx2  #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
 bindir=${HCPPIPEDIR}/global/binaries
 scriptsdir=${HCPPIPEDIR_dMRITract}
-TemplateFolder="${HCPPIPEDIR_Template}/91282_Greyordinates"
+TemplateFolder="${HCPPIPEDIR_Templates}/91282_Greyordinates"
 
 # Hard-coded variables for now
 Nsamples=100
