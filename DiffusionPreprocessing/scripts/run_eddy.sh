@@ -96,9 +96,9 @@ usage()
 	echo "                Note that this option has no effect unless the GPU-enabled version of"
 	echo "                eddy (eddy.gpu) is used."
 	echo ""
-    echo "    [-b | --b0opts] : Use --b0_flm=quadratic and --b0_slm=linear to handle"
-    echo "                     rotating b60 \"b0\" volumes"
-    echo ""
+	echo "    [-b | --b0opts] : Use --b0_flm=quadratic and --b0_slm=linear to handle"
+	echo "                     rotating b60 \"b0\" volumes"
+	echo ""
 	echo "    -w <working-dir>           | "
 	echo "    -w=<working-dir>           | "
 	echo "    --workingdir <working-dir> | "
@@ -144,7 +144,7 @@ get_options()
 	useGpuVersion="False"
 	produceDetailedOutlierStats="False"
 	replaceOutliers="False"
-    useb0options="False"
+	useb0options="False"
 	unset workingdir
 	nvoxhp=""
 	sep_offs_move="False"
@@ -201,10 +201,10 @@ get_options()
 				ff_val=${argument/*=/""}
 				index=$(( index + 1 ))
 				;;
-            -b | --b0opts)
-                useb0options="True"
-                index=$(( index + 1 ))
-                ;;
+			-b | --b0opts)
+				useb0options="True"
+				index=$(( index + 1 ))
+				;;
 			*)
 				echo "Unrecognized Option: ${argument}"
 				usage
@@ -285,7 +285,7 @@ main()
 	#
 	#  If the user has not requested us to try to use the GPU-enabled version,
 	#  then we don't bother looking for it or trying to use it.
-    #gpuEnabledEddy="${FSLDIR}/bin/eddy.gpu"
+	#gpuEnabledEddy="${FSLDIR}/bin/eddy.gpu"
 	#gpuEnabledEddy now set in SetUpHCPPipeline.sh
 	stdEddy="${FSLDIR}/bin/eddy"
 	
@@ -351,12 +351,11 @@ main()
 		then
 			ff_valOption="--ff=${ff_val}"
 		fi
+
 		if [ "${useb0options}" = "True" ]
 		then
 			b0options="--b0_flm=quadratic --b0_slm=linear"
 		fi
-    fi
-    
 	fi
 	
 	log_Msg "outlier statistics option: ${outlierStatsOption}"

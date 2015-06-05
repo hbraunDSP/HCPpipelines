@@ -153,6 +153,10 @@ usage()
 	echo "    : Volumes with a bvalue smaller than this value will be considered as b0s"
 	echo "      If not specified, defaults to ${DEFAULT_B0_MAX_BVAL}"
 	echo ""
+	echo "    [--b0options=True]"
+	echo "    : Specify whether to explicitly model rotating b60 volumes in eddy"
+	echo "      If not specified, defaults to \"False\""
+	echo ""
 	echo "    [--printcom=<print-command>]"
 	echo "    : Use the specified <print-command> to echo or otherwise output the commands"
 	echo "      that would be executed instead of actually running them"
@@ -229,6 +233,7 @@ get_options()
 	DWIName="Diffusion"
 	DegreesOfFreedom=6
 	b0maxbval=${DEFAULT_B0_MAX_BVAL}
+	Useb0options="False"
 	runcmd=""
 	
 	# parse arguments
@@ -287,6 +292,10 @@ get_options()
 				;;
 			--b0maxbval=*)
 				b0maxbval=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--b0options=*)
+				Useb0options=${argument/*=/""}
 				index=$(( index + 1 ))
 				;;
 			--printcom=*)
@@ -466,6 +475,7 @@ main()
 		--path=${StudyFolder} \
 		--subject=${Subject} \
 		--dwiname=${DWIName} \
+		--b0options=${Useb0options} \
 		--printcom="${runcmd}"
 	
 	log_Msg "Invoking Post-Eddy Steps"
