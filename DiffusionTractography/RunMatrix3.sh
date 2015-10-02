@@ -13,10 +13,14 @@ fi
 
 StudyFolder=$1          # "$1" #Path to Generic Study folder
 Subject=$2              # "$2" #SubjectID
+DiffusionResolution=$3
 
-bindir=/home/stam/fsldev/ptx2  #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
+#bindir=/home/stam/fsldev/ptx2  #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
+bindir=${HCPPIPEDIR}/global/binaries
 scriptsdir=${HCPPIPEDIR_dMRITract}
 TemplateFolder="${HCPPIPEDIR_Templates}/91282_Greyordinates"
+
+DiffusionResolution=`echo $DiffusionResolution 1.25 | awk '{print $1}'`
 
 # Hard-coded variables for now
 Nsamples=25
@@ -40,8 +44,11 @@ DtiMask=$BedpostxFolder/nodif_brain_mask
 #Temporarily here, should be in Prepare_Seeds
 rm -rf $ResultsFolder/stop
 rm -rf $ResultsFolder/volseeds
-echo $ResultsFolder/L.roi.asc >> $ResultsFolder/stop
-echo $ResultsFolder/R.roi.asc >> $ResultsFolder/stop
+
+#echo $ResultsFolder/L.roi.asc >> $ResultsFolder/stop
+#echo $ResultsFolder/R.roi.asc >> $ResultsFolder/stop
+echo $ResultsFolder/pial.L.asc >> $ResultsFolder/stop
+echo $ResultsFolder/pial.R.asc >> $ResultsFolder/stop
 
 echo $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_LEFT >> $ResultsFolder/volseeds
 echo $ResultsFolder/CIFTI_STRUCTURE_ACCUMBENS_RIGHT >> $ResultsFolder/volseeds
@@ -76,9 +83,11 @@ oG=" $oG --xfm=`echo $RegFolder/standard2acpc_dc` --invxfm=`echo $RegFolder/acpc
 #Define Targets
 oG=" $oG --stop=$ResultsFolder/stop"  #Rethink stop mask, should we include an exclusion along the midsagittal plane (without the CC and the commisures).
 Targets="$ResultsFolder/white.L.asc $ResultsFolder/white.R.asc $ResultsFolder/volseeds" 
-Target_Mat4="$StudyFolder"/"$Subject"/T1w/Whole_Brain_Trajectory_1.25 #In diffusion space
+Target_Mat4="$StudyFolder"/"$Subject"/T1w/Whole_Brain_Trajectory_${DiffusionResolution} #In diffusion space
 
-
+#fsl_sub -R option is no longer supported (it only applied to TORQUE anyway, not SGE)
+#Ropt() { echo "-R $1"; }
+Ropt() { echo; }
 
 ########### Run Mat3 in 3 blocks ###################
 ########### Left Hemisphere to ALL #################
@@ -108,12 +117,12 @@ do
 	    echo $trackdir/fdt_matrix3.dot >> $ResultsFolder/Mat3_${count}_list.txt
 	done
 	echo "Queueing Probtrackx Part${count}" 
-	ptx2_id=`fsl_sub -T 720 -R 12000 -l $ResultsFolder/Mat3_logs -N ptx2_Mat3 -t $ResultsFolder/commands_Mat3_${count}.txt`
-	ptx2_post_id=`fsl_sub -T 720 -R 40000 -j ${ptx2_id} -l $ResultsFolder/Mat3_logs -N Mat3_merge $scriptsdir/MergeDotMat3.sh $StudyFolder $Subject $count $TemplateFolder $Nrepeats`
+	ptx2_id=`${FSLDIR}/bin/fsl_sub -T 720 $(Ropt 12000) -l $ResultsFolder/Mat3_logs -N ptx2_Mat3 -t $ResultsFolder/commands_Mat3_${count}.txt`
+	ptx2_post_id=`${FSLDIR}/bin/fsl_sub -T 720 $(Ropt 40000) -j ${ptx2_id} -l $ResultsFolder/Mat3_logs -N Mat3_merge $scriptsdir/MergeDotMat3.sh $StudyFolder $Subject $count $TemplateFolder $Nrepeats`
     fi
     count=$(($count + 1))
 done
 
 #The following dependency assumes that merging of Mat3_3 will be the last to complete and that Mat3_1 and Mat3_2 merging will have finished by now. It will fail if that is not true
 #To do this correctly ptx2_post_id should be joined in an array. Qsub can do that but not fsl_sub.
-fsl_sub -T 180 -R 35000 -j ${ptx2_post_id} -l $ResultsFolder/Mat3_logs -N Mat3_conn $scriptsdir/PostProcMatrix3.sh $StudyFolder $Subject
+${FSLDIR}/bin/fsl_sub -T 180 $(Ropt 35000) -j ${ptx2_post_id} -l $ResultsFolder/Mat3_logs -N Mat3_conn $scriptsdir/PostProcMatrix3.sh $StudyFolder $Subject

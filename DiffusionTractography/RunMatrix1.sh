@@ -103,17 +103,18 @@ for ((n=1;n<=${Nrepeats};n++)); do
     echo ${trackdir}/fdt_matrix1.dot >> $ResultsFolder/Mat1_list.txt
 done
 
+#fsl_sub -R option is no longer supported (it only applied to TORQUE anyway, not SGE)
+#Ropt() { echo "-R $1"; }
+Ropt() { echo; }
+
 #Do Tractography
 #N100: ~4h, 4GB RAM, 1.2 GB on disk
 echo "Queueing Probtrackx" 
-#ptx_id=`${FSLDIR}/bin/fsl_sub -T 480 -R 6000 -l ${ResultsFolder}/Mat1_logs -N ptx2_Mat1 -t ${ResultsFolder}/commands_Mat1.txt`
-ptx_id=`${FSLDIR}/bin/fsl_sub -T 480 -l ${ResultsFolder}/Mat1_logs -N ptx2_Mat1 -t ${ResultsFolder}/commands_Mat1.txt`
+ptx_id=`${FSLDIR}/bin/fsl_sub -T 480 $(Ropt 6000) -l ${ResultsFolder}/Mat1_logs -N ptx2_Mat1 -t ${ResultsFolder}/commands_Mat1.txt`
 
 #Merge Results from invidual Runs (~7 hours, 20 GB RAM)
-#ptx_merged_id=`${FSLDIR}/bin/fsl_sub -T 720 -R 30000 -j ${ptx_id} -l ${ResultsFolder}/Mat1_logs -N Mat1_merge ${bindir_fdtmerge}/fdt_matrix_merge ${ResultsFolder}/Mat1_list.txt ${ResultsFolder}/merged_matrix1.dot`
-ptx_merged_id=`${FSLDIR}/bin/fsl_sub -T 720 -j ${ptx_id} -l ${ResultsFolder}/Mat1_logs -N Mat1_merge ${bindir_fdtmerge}/fdt_matrix_merge ${ResultsFolder}/Mat1_list.txt ${ResultsFolder}/merged_matrix1.dot`
+ptx_merged_id=`${FSLDIR}/bin/fsl_sub -T 720 $(Ropt 30000) -j ${ptx_id} -l ${ResultsFolder}/Mat1_logs -N Mat1_merge ${bindir_fdtmerge}/fdt_matrix_merge ${ResultsFolder}/Mat1_list.txt ${ResultsFolder}/merged_matrix1.dot`
 
 #Create CIFTI file=Mat1+Mat1_transp (1.5 hours, 36 GB)
-#${FSLDIR}/bin/fsl_sub -T 180 -R 45000 -j ${ptx_merged_id} -l ${ResultsFolder}/Mat1_logs -N Mat1_conn ${scriptsdir}/PostProcMatrix1.sh ${StudyFolder} ${Subject} ${TemplateFolder} ${Nrepeats}
-${FSLDIR}/bin/fsl_sub -T 180 -j ${ptx_merged_id} -l ${ResultsFolder}/Mat1_logs -N Mat1_conn ${scriptsdir}/PostProcMatrix1.sh ${StudyFolder} ${Subject} ${TemplateFolder} ${Nrepeats}
+${FSLDIR}/bin/fsl_sub -T 180 $(Ropt 45000) -j ${ptx_merged_id} -l ${ResultsFolder}/Mat1_logs -N Mat1_conn ${scriptsdir}/PostProcMatrix1.sh ${StudyFolder} ${Subject} ${TemplateFolder} ${Nrepeats}
 

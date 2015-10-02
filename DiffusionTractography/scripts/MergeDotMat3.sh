@@ -2,7 +2,8 @@
 set -e
 echo -e "\n START: MergeDotMat3"
 
-bindir=/home/stam/fsldev/ptx2 #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
+#bindir=/home/stam/fsldev/ptx2 #Eventually FSLDIR (use custom probtrackx2 and fdt_matrix_merge for now)
+bindir=${HCPPIPEDIR}/global/binaries
 Caret7_command=${CARET7DIR}/wb_command
 
 if [ "$5" == "" ];then

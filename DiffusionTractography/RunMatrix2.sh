@@ -132,6 +132,10 @@ for ((n=1;n<=${Nrepeats};n++)); do
     echo $trackdir/fdt_matrix2.dot >> $ResultsFolder/Mat2_list.txt
 done
 
+#fsl_sub -R option is no longer supported (it only applied to TORQUE anyway, not SGE)
+#Ropt() { echo "-R $1"; }
+Ropt() { echo; }
+
 #Do Tractography
 #With downsampled Target to 3mm, no stripping
 #N10: 22 minutes, 3.5 GB RAM
@@ -140,14 +144,14 @@ done
 #With downsampled Target to 3mm, 4mm Distance stripping
 #N100: 3:45 h, 3.9 GB RAM, 1.2 GB on disk
 echo "Queueing Probtrackx" 
-ptx_id=`fsl_sub -T 420 -R 8000 -l $ResultsFolder/Mat2_logs -N ptx2_Mat2 -t $ResultsFolder/commands_Mat2.txt`
+ptx_id=`${FSLDIR}/bin/fsl_sub -T 420 $(Ropt 8000) -l $ResultsFolder/Mat2_logs -N ptx2_Mat2 -t $ResultsFolder/commands_Mat2.txt`
 
 #Merge Results from invidual Runs (4 hours, 15 GB) (2.5 hours, 10 GB with stripped target mask)
-ptx_merged_id=`fsl_sub -T 420 -R 25000 -j ${ptx_id} -l $ResultsFolder/Mat2_logs -N Mat2_merge $bindir/fdt_matrix_merge $ResultsFolder/Mat2_list.txt $ResultsFolder/merged_matrix2.dot`
+ptx_merged_id=`${FSLDIR}/bin/fsl_sub -T 420 $(Ropt 25000) -j ${ptx_id} -l $ResultsFolder/Mat2_logs -N Mat2_merge $bindir/fdt_matrix_merge $ResultsFolder/Mat2_list.txt $ResultsFolder/merged_matrix2.dot`
 
 #Perform Mat2 squaring on the GPU (~4 hours, <2.5 hours for stripped target)
 ${scriptsdir}/CreateMat2GPUSub.sh $ResultsFolder #Create submission script to the GPU queue
 gpu_id=`qsub $ResultsFolder/Mat2GPUSub.sh -W depend=afterok:${ptx_merged_id} -o $ResultsFolder/Mat2_logs/Mat2GPU.o -e $ResultsFolder/Mat2_logs/Mat2GPU.e`
 
 #(~60 minutes, ~32 GB)
-fsl_sub -T 240 -R 40000 -j ${gpu_id} -l $ResultsFolder/Mat2_logs -N Mat2_conn $scriptsdir/PostProcMatrix2.sh $StudyFolder $Subject $TemplateFolder $Nrepeats
+${FSLDIR}/bin/fsl_sub -T 240 $(Ropt 40000) -j ${gpu_id} -l $ResultsFolder/Mat2_logs -N Mat2_conn $scriptsdir/PostProcMatrix2.sh $StudyFolder $Subject $TemplateFolder $Nrepeats
