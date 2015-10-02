@@ -107,6 +107,9 @@ usage()
 	echo "    [--ff=<ff-value>] : TBW??"
 	echo "      Note: This option has no effect if the GPU-enabled version of eddy is not used."
 	echo ""
+    echo "    [--b0options=True] : ask eddy to explicitly model rotating b60 volumes"
+    echo "      Note: This option will only work on GPU-enabled versions of eddy >= 4/1/15"
+	echo ""
 	echo "    --path=<study-path>"
 	echo "    : path to subject's data folder"
 	echo ""
@@ -195,6 +198,7 @@ get_options()
 	DWIName="Diffusion"
 	DetailedOutlierStats="False"
 	ReplaceOutliers="False"
+    Useb0options="False"
 	runcmd=""
 	nvoxhp=""
 	sep_offs_move="False"
@@ -259,6 +263,10 @@ get_options()
 				ff_val=${argument/*=/""}
 				index=$(( index + 1 ))
 				;;
+            --b0options=*)
+                Useb0options=${argument/*=/""}
+                index=$(( index + 1 ))
+                ;;
 			*)
 				usage
 				echo "ERROR: Unrecognized Option: ${argument}"
@@ -404,6 +412,13 @@ main()
 		ff_option=""
 	fi
 	
+	# Determine b0 option value to run_eddy.sh script
+	if [ "${Useb0options}" = "True" ]; then
+		b0_option="--b0opts"
+	else
+		b0_option=""
+	fi
+	
 	log_Msg "Running Eddy"
 	
 	run_eddy_cmd="${runcmd} ${HCPPIPEDIR_dMRI}/run_eddy.sh "
@@ -413,6 +428,7 @@ main()
 	run_eddy_cmd+="${sep_offs_move_option} "
 	run_eddy_cmd+="${rms_option} "
 	run_eddy_cmd+="${ff_option} "
+	run_eddy_cmd+="${b0_option} "
 	run_eddy_cmd+="-g "
 	run_eddy_cmd+="-w ${outdir}/eddy "
 	
