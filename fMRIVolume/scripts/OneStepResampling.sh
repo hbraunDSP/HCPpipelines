@@ -17,7 +17,7 @@ Usage() {
   echo "             --fmrifolder=<fMRI processing folder>"
   echo "             --atlasspacedir=<output directory for several resampled images>"
   echo "             --fmri2structin=<input fMRI to T1w warp>"
-  echo "             --struct2std=<input T1w to MNI warp>"
+  echo "             --struct2std=<input T1w to MNI warp, or blank to leave data in T1w space>"
   echo "             --owarp=<output fMRI to MNI warp>"
   echo "             --oiwarp=<output MNI to fMRI warp>"
   echo "             --motionmatdir=<input motion correcton matrix directory>"
@@ -98,6 +98,21 @@ BiasFieldFile=`basename "$BiasField"`
 T1wImageFile=`basename $T1wImage`
 FreeSurferBrainMaskFile=`basename "$FreeSurferBrainMask"`
 
+######
+# If output names are specified for brainmask_fs, biasfield, T1w (eg: alternate suffix)
+FreeSurferBrainMaskOutput=`getopt1 "--ofreesurferbrainmask" $@`  # "${12}"
+BiasFieldOutput=`getopt1 "--obiasfield" $@`  # "${13}"
+T1wImageOutput=`getopt1 "--ot1" $@`  # "$3"
+
+FreeSurferBrainMaskOutput=`defaultopt $FreeSurferBrainMaskOutput $FreeSurferBrainMask`
+BiasFieldOutput=`defaultopt $BiasFieldOutput $BiasField`
+T1wImageOutput=`defaultopt $T1wImageOutput T1wImage`
+
+BiasFieldFileOutput=`basename "$BiasFieldOutput"`
+T1wImageFileOutput=`basename $T1wImageOutput`
+FreeSurferBrainMaskFileOutput=`basename "$FreeSurferBrainMaskOutput"`
+######
+
 echo " "
 echo " START: OneStepResampling"
 
@@ -139,7 +154,13 @@ ${FSLDIR}/bin/fslmaths ${WD}/${BiasFieldFile}.${FinalfMRIResolution} -thr 0.1 ${
 
 # Downsample warpfield (fMRI to standard) to increase speed 
 #   NB: warpfield resolution is 10mm, so 1mm to fMRIres downsample loses no precision
-${FSLDIR}/bin/convertwarp --relout --rel --warp1=${fMRIToStructuralInput} --warp2=${StructuralToStandard} --ref=${WD}/${T1wImageFile}.${FinalfMRIResolution} --out=${OutputTransform}
+if [ "x${StructuralToStandard}" = x ]; then
+	#if no struct2std given, only use a single warp file (eg: fmri2struct)
+	warp2=
+else
+	warp2="--warp2=${StructuralToStandard}"
+fi
+${FSLDIR}/bin/convertwarp --relout --rel --warp1=${fMRIToStructuralInput} ${warp2} --ref=${WD}/${T1wImageFile}.${FinalfMRIResolution} --out=${OutputTransform}
 
 ###Add stuff for RMS###
 invwarp -w ${OutputTransform} -o ${OutputInvTransform} -r ${ScoutInputgdc}
@@ -159,9 +180,9 @@ fi
 ###Add stuff for RMS###
 
 
-${FSLDIR}/bin/imcp ${WD}/${T1wImageFile}.${FinalfMRIResolution} ${fMRIFolder}/${T1wImageFile}.${FinalfMRIResolution}
-${FSLDIR}/bin/imcp ${WD}/${FreeSurferBrainMaskFile}.${FinalfMRIResolution} ${fMRIFolder}/${FreeSurferBrainMaskFile}.${FinalfMRIResolution}
-${FSLDIR}/bin/imcp ${WD}/${BiasFieldFile}.${FinalfMRIResolution} ${fMRIFolder}/${BiasFieldFile}.${FinalfMRIResolution}
+${FSLDIR}/bin/imcp ${WD}/${T1wImageFile}.${FinalfMRIResolution} ${fMRIFolder}/${T1wImageFileOutput}.${FinalfMRIResolution}
+${FSLDIR}/bin/imcp ${WD}/${FreeSurferBrainMaskFile}.${FinalfMRIResolution} ${fMRIFolder}/${FreeSurferBrainMaskFileOutput}.${FinalfMRIResolution}
+${FSLDIR}/bin/imcp ${WD}/${BiasFieldFile}.${FinalfMRIResolution} ${fMRIFolder}/${BiasFieldFileOutput}.${FinalfMRIResolution}
 
 mkdir -p ${WD}/prevols
 mkdir -p ${WD}/postvols
@@ -200,7 +221,13 @@ fslmaths ${OutputfMRI}_mask -Tmin ${OutputfMRI}_mask
 ${FSLDIR}/bin/convertwarp --relout --rel --ref=${WD}/${T1wImageFile}.${FinalfMRIResolution} --warp1=${GradientDistortionField} --warp2=${OutputTransform} --out=${WD}/Scout_gdc_MNI_warp.nii.gz
 ${FSLDIR}/bin/applywarp --rel --interp=spline --in=${ScoutInput} -w ${WD}/Scout_gdc_MNI_warp.nii.gz -r ${WD}/${T1wImageFile}.${FinalfMRIResolution} -o ${ScoutOutput}
 # Create spline interpolated version of Jacobian  (T1w space, fMRI resolution)
-${FSLDIR}/bin/applywarp --rel --interp=spline -i ${JacobianIn} -r ${WD}/${T1wImageFile}.${FinalfMRIResolution} -w ${StructuralToStandard} -o ${JacobianOut}
+if [ "x${StructuralToStandard}" = x ]; then
+	#if no struct2std given, just resample jacobian
+	flirt -interp spline -applyisoxfm ${FinalfMRIResolution} -in ${JacobianIn} -ref ${WD}/${T1wImageFile}.${FinalfMRIResolution} -out ${JacobianOut}
+else
+	${FSLDIR}/bin/applywarp --rel --interp=spline -i ${JacobianIn} -r ${WD}/${T1wImageFile}.${FinalfMRIResolution} -w ${StructuralToStandard} -o ${JacobianOut}
+fi
+
 
 ###Add stuff for RMS###
 cat ${fMRIFolder}/Movement_RelativeRMS.txt | awk '{ sum += $1} END { print sum / NR }' >> ${fMRIFolder}/Movement_RelativeRMS_mean.txt
