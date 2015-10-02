@@ -34,6 +34,7 @@ dlabelFile="NONE"
 
 for Subject in ${Subjlist} ; do
   for fMRIName in ${fMRINames} ; do
+	#                                                    $1            $2        $3            $4              $5              $6          $7              $8                       $9                      $10               $11                $12
     fsl_sub -q q6.q ${GitRepo}/RestingStateStats.sh ${StudyFolder} ${Subject} ${fMRIName} ${OrigHighPass} ${Caret7_Command} ${RegName} ${LowResMesh} ${FinalfMRIResolution} ${BrainOrdinatesResolution} ${SmoothingFWHM} ${OutputProcSTRING} ${dlabelFile}
     echo "set -- ${StudyFolder} ${Subject} ${fMRIName} ${OrigHighPass} ${Caret7_Command} ${RegName} ${LowResMesh} ${FinalfMRIResolution} ${BrainOrdinatesResolution} ${SmoothingFWHM} ${OutputProcSTRING} ${dlabelFile}"
   done
