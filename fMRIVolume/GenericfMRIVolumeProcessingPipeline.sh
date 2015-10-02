@@ -76,6 +76,8 @@ dof=`opts_DefaultOpt $dof 6`
 RUN=`opts_GetOpt1 "--printcom" $@`  # use ="echo" for just printing everything and not running the commands (default is to run)
 MotionCorrectionType=`opts_GetOpt1 "--mctype" $@`  # use = "flirt" to run FLIRT-based mcflirt_acc.sh, or "mcflirt" to run MCFLIRT-based mcflirt_basic.sh (default is "flirt")
 
+BiasFieldType=`opts_GetOpt1 "--biasfield" $@`  # use = "ONES" to replace struct-based bias field with all ones (eg: no bias correction). (default is "")
+
 # Setup PATHS
 PipelineScripts=${HCPPIPEDIR_fMRIVol}
 GlobalScripts=${HCPPIPEDIR_Global}
@@ -107,7 +109,6 @@ OutputfMRI2StandardTransform="${NameOffMRI}2standard"
 Standard2OutputfMRITransform="standard2${NameOffMRI}"
 QAImage="T1wMulEPI"
 JacobianOut="Jacobian"
-
 
 ########################################## DO WORK ########################################## 
 
@@ -229,12 +230,23 @@ ${RUN} ${PipelineScripts}/OneStepResampling.sh \
     --oscout=${fMRIFolder}/${NameOffMRI}_SBRef_nonlin \
     --jacobianin=${fMRIFolder}/${JacobianOut} \
     --ojacobian=${fMRIFolder}/${JacobianOut}_MNI.${FinalfMRIResolution}
-    
+   
+
 #Intensity Normalization and Bias Removal
+BiasFieldFile=${fMRIFolder}/${BiasFieldMNI}.${FinalfMRIResolution}
+if [ "$BiasFieldType" = ONES ]; then
+	
+	#if biastype = ONES, replace current biasfield image with all 1's
+	${RUN} ${FSLDIR}/bin/fslmaths ${BiasFieldFile} \
+		-mul 0 -add 1 ${BiasFieldFile}.ONES
+		
+	BiasFieldFile=${BiasFieldFile}.ONES
+fi
+
 log_Msg "Intensity Normalization and Bias Removal"
 ${RUN} ${PipelineScripts}/IntensityNormalization.sh \
     --infmri=${fMRIFolder}/${NameOffMRI}_nonlin \
-    --biasfield=${fMRIFolder}/${BiasFieldMNI}.${FinalfMRIResolution} \
+    --biasfield=${BiasFieldFile} \
     --jacobian=${fMRIFolder}/${JacobianOut}_MNI.${FinalfMRIResolution} \
     --brainmask=${fMRIFolder}/${FreeSurferBrainMask}.${FinalfMRIResolution} \
     --ofmri=${fMRIFolder}/${NameOffMRI}_nonlin_norm \
