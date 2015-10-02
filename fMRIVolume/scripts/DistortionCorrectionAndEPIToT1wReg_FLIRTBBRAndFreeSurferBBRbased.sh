@@ -14,6 +14,7 @@ SIEMENS_METHOD_OPT="SiemensFieldMap"
 GENERAL_ELECTRIC_METHOD_OPT="GeneralElectricFieldMap"
 SPIN_ECHO_METHOD_OPT="TOPUP"
 RESUME_METHOD_OPT="RESUME"
+RESUME_T1REG_METHOD_OPT="ResumeT1"
 
 ################################################ SUPPORT FUNCTIONS ##################################################
 
@@ -331,6 +332,37 @@ case $DistortionCorrection in
 
         log_Msg "SKIPPING DISTORTION CORRECTION.  Hopefully already completed?"
         ;;
+
+    ${RESUME_T1REG_METHOD_OPT})
+
+        # create a spline interpolated image of scout (distortion corrected in same space)
+        log_Msg "create a spline interpolated image of scout (distortion corrected in same space)"
+        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${ScoutInputName} -w ${WD}/WarpField.nii.gz -o ${WD}/${ScoutInputFile}_undistorted
+
+        # apply Jacobian correction to scout image (optional)
+        if [ $UseJacobian = true ] ; then
+            log_Msg "apply Jacobian correction to scout image"
+            ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -mul ${WD}/Jacobian.nii.gz ${WD}/${ScoutInputFile}_undistorted
+        fi
+
+        log_Msg "register undistorted scout image to T1w"
+        ${HCPPIPEDIR_Global}/epi_reg_dof --dof=${dof} --epi=${WD}/${ScoutInputFile}_undistorted --t1=${T1wImage} --t1brain=${WD}/${T1wBrainImageFile} --out=${WD}/${ScoutInputFile}_undistorted
+
+        # generate combined warpfields and spline interpolated images + apply bias field correction
+        log_Msg "generate combined warpfields and spline interpolated images and apply bias field correction"
+        ${FSLDIR}/bin/convertwarp --relout --rel -r ${T1wImage} --warp1=${WD}/WarpField.nii.gz --postmat=${WD}/${ScoutInputFile}_undistorted.mat -o ${WD}/${ScoutInputFile}_undistorted_warp
+        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Jacobian.nii.gz -r ${T1wImage} --premat=${WD}/${ScoutInputFile}_undistorted.mat -o ${WD}/Jacobian2T1w.nii.gz
+        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${T1wImage} -w ${WD}/${ScoutInputFile}_undistorted_warp -o ${WD}/${ScoutInputFile}_undistorted
+
+        # apply Jacobian correction to scout image (optional)
+        if [ $UseJacobian = true ] ; then
+            log_Msg "apply Jacobian correction to scout image"
+            ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -div ${BiasField} -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz 
+        else
+            log_Msg "do not apply Jacobian correction to scout image"
+            ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -div ${BiasField} ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz 
+        fi
+	;;
 
     *)
 
