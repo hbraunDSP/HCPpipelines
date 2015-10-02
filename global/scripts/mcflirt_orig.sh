@@ -89,6 +89,9 @@ for i in `ls ${output}.mat/*` ; do
     degy=`echo "$rady * (180 / $pi)" | bc -l`
     radz=`echo $radians | cut -d " " -f 3`
     degz=`echo "$radz * (180 / $pi)" | bc -l`
+
+    # NOTE: mcflirt .par files are [radx rady radz mmx mmy mmz], but the output from these scripts is mm first then rot
+
     # The "%.6f" formatting specifier allows the numeric value to be as wide as it needs to be to accomodate the number
     # Then we mandate (include) a single space as a delimiter between values.
     echo `printf "%.6f" $mmx` `printf "%.6f" $mmy` `printf "%.6f" $mmz` `printf "%.6f" $degx` `printf "%.6f" $degy` `printf "%.6f" $degz` >> ${output}/mc.par
