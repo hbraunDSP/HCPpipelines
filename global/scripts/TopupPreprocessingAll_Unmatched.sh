@@ -272,12 +272,15 @@ scoutdims=`${FSLDIR}/bin/fslinfo ${ScoutInputName} | grep -E "^dim[123][[:space:
 topupdims=`${FSLDIR}/bin/fslinfo ${WD}/Magnitude | grep -E "^dim[123][[:space:]]" | awk '{print $2}'`
 
 dwelltol=10^-6
-samedwell=`echo "a=(${DwellTime} - ${TopupDwellTime}); if(a<0)a*=-1; if(a<0)a*=-1; a<=${dwelltol}" | bc -l`
+samedwell=`echo "a=(${DwellTime} - ${TopupDwellTime}); if(a<0)a*=-1; a<=${dwelltol}" | bc -l`
 
 if [[ "$scoutdims" == "$topupdims" ]] && [[ $samedwell == 1 ]]; then
 	#everything is normal
 	:
 else
+	#since convertwarp needs "x-" instead of "-x"
+	UnwarpDir_fsl=`echo ${UnwarpDir} | sed -E 's/-([xyz])/\1-/'`
+
 	#1. If SEDwellTime != DwellTime, or if SBRef and SEPos/Neg have diff resolutions
 	#have to coreg and fugue etc...
 	ScoutBase=SBRef
@@ -286,7 +289,7 @@ else
 	#Make Inverse Shiftmap for FORWARD warping the unwarped Magnitude so we can coregister that
 	#with the non-corrected Scout
 	fslmaths ${WD}/FieldMap_ShiftMap.nii.gz -mul -1 ${WD}/FieldMap_InvShiftMap.nii.gz
-	${FSLDIR}/bin/convertwarp --relout --rel --ref=${WD}/Magnitude --shiftmap=${WD}/FieldMap_InvShiftMap.nii.gz --shiftdir=${UnwarpDir} --out=${WD}/FieldMap_InvWarp.nii.gz
+	${FSLDIR}/bin/convertwarp --relout --rel --ref=${WD}/Magnitude --shiftmap=${WD}/FieldMap_InvShiftMap.nii.gz --shiftdir=${UnwarpDir_fsl} --out=${WD}/FieldMap_InvWarp.nii.gz
 
 	${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Magnitude_brain -r ${WD}/Magnitude_brain -w ${WD}/FieldMap_InvWarp.nii.gz -o ${WD}/Magnitude_brain_warped
 
@@ -300,7 +303,7 @@ else
 	# Convert rad/s to Scout voxel shift map, then insert that into warpfield
 	${FSLDIR}/bin/fugue --loadfmap=${WD}/FieldMap2${ScoutBase} --dwell=${DwellTime} --saveshift=${WD}/FieldMap2${ScoutBase}_ShiftMap.nii.gz
 
-	${FSLDIR}/bin/convertwarp --relout --rel --ref=${WD}/${ScoutBase} --shiftmap=${WD}/FieldMap2${ScoutBase}_ShiftMap.nii.gz --shiftdir=${UnwarpDir} --out=${WD}/FieldMap2${ScoutBase}_Warp.nii.gz    
+	${FSLDIR}/bin/convertwarp --relout --rel --ref=${WD}/${ScoutBase} --shiftmap=${WD}/FieldMap2${ScoutBase}_ShiftMap.nii.gz --shiftdir=${UnwarpDir_fsl} --out=${WD}/FieldMap2${ScoutBase}_Warp.nii.gz    
 
 	#copy new Scout-space files to expected locations and we're all good to go
 	${FSLDIR}/bin/immv ${WD}/FieldMap2${ScoutBase} ${WD}/TopupField
