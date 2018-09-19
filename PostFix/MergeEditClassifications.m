@@ -11,6 +11,10 @@ HandSignal = [];
 HandNoise = [];
 TrainingLabels = ['['];
 
+if(isempty(NumICAs))
+	NumICAs=max([OriginalFixSignal OriginalFixNoise ReclassifyAsSignal ReclassifyAsNoise])
+end
+
 for i=1:NumICAs
     %Signal
     if (ismember(i,OriginalFixSignal) && ~ismember(i,ReclassifyAsNoise)) || ismember(i,ReclassifyAsSignal)

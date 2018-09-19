@@ -70,7 +70,8 @@ g_script_name=`basename ${0}`
 source ${HCPPIPEDIR}/global/scripts/log.shlib # Logging related functions
 log_SetToolName "${g_script_name}"
 
-MATLAB_HOME="/export/matlab/R2013a"
+#MATLAB_HOME="/export/matlab/R2013a"
+MATLAB_HOME=${HCP_MATLAB_HOME}
 log_Msg "MATLAB_HOME: ${MATLAB_HOME}"
 
 #
@@ -117,7 +118,8 @@ get_options()
 	unset g_migp_vars
 	unset g_output_proc_string
 	unset g_matlab_run_mode
-
+	unset g_fmri_files_list
+	
 	# set default values
 	g_matlab_run_mode=0
 
@@ -168,6 +170,10 @@ get_options()
 				;;
 			--matlab-run-mode=*)
 				g_matlab_run_mode=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--fmri-files-list=*)
+				g_fmri_files_list=${argument/*=/""}
 				index=$(( index + 1 ))
 				;;
 			*)
@@ -288,7 +294,7 @@ main()
 			mkdir -p ${OutputFolder}
 		fi
 
-		txtfile="${OutputFolder}/${g_output_fmri_name}.txt"
+		txtfile="${OutputFolder}/${g_output_fmri_name}${g_fmri_proc_string}${g_output_proc_string}.txt"
 		log_Msg "txtfile: ${txtfile}"
 		
 		if [ -e "${txtfile}" ]; then
@@ -301,19 +307,29 @@ main()
 		cat ${txtfile}
 		log_Msg "Done Showing txtfile contents"
 
-		for fMRIName in ${g_fmri_names_list} ; do
-			ResultsFolder="${AtlasFolder}/Results/${fMRIName}"
-			log_Msg "ResultsFolder: ${ResultsFolder}"
-			echo "${ResultsFolder}/${fMRIName}${g_fmri_proc_string}" >> ${txtfile}
-			log_Msg "Showing txtfile: ${txtfile} contents"
-			cat ${txtfile}
-			log_Msg "Done Showing txtfile contents"
-		done
-
+		g_fmri_files_list=`echo ${g_fmri_files_list} | sed 's/@/ /g'`
+		
+		if [ -z "${g_fmri_files_list}" ]; then
+			for fMRIName in ${g_fmri_names_list} ; do
+				ResultsFolder="${AtlasFolder}/Results/${fMRIName}"
+				log_Msg "ResultsFolder: ${ResultsFolder}"
+				echo "${ResultsFolder}/${fMRIName}${g_fmri_proc_string}" >> ${txtfile}
+			done
+		else
+			for fMRIFile in ${g_fmri_files_list} ; do
+				#echo "${fMRIFile}${g_fmri_proc_string}" >> ${txtfile}
+				echo "${fMRIFile}" >> ${txtfile}
+			done
+		fi
+		log_Msg "Showing txtfile: ${txtfile} contents"
+		cat ${txtfile}
+		log_Msg "Done Showing txtfile contents"
+		
 		VN=`echo ${g_migp_vars} | cut -d "@" -f 5`
 		log_Msg "VN: ${VN}"
 
-		mPath="${HCPPIPEDIR}/MSMAll/scripts"
+		mPath="${HCPPIPEDIR}/global/matlab "
+		mPath+="${HCPPIPEDIR}/MSMAll/scripts "
 		log_Msg "mPath: ${mPath}"
 
 		# run matlab ssConcat function 
@@ -342,7 +358,7 @@ main()
 
 			1)
 				# Use Matlab - Untested
-				matlab_script_file_name=${ResultsFolder}/ssConcat.m
+				matlab_script_file_name=${OutputFolder}/ssConcat.m
 				log_Msg "Creating Matlab script: ${matlab_script_file_name}"
 
 				if [ -e ${matlab_script_file_name} ]; then
@@ -363,7 +379,7 @@ main()
 
 			2) 
 				# Use Octave - Untested
-				octave_script_file_name=${ResultsFolder}/ssConcat.m
+				octave_script_file_name=${OutputFolder}/ssConcat.m
 				log_Msg "Creating Octave script: ${octave_script_file_name}"
 
 				if [ -e ${octave_script_file_name} ]; then
@@ -387,8 +403,8 @@ main()
 				exit 1
 		esac
 
-		log_Msg "Removing ${txtfile} used as input to ssConcat"
-		rm ${txtfile}
+		#log_Msg "Removing ${txtfile} used as input to ssConcat"
+		#rm ${txtfile}
 	fi
 
 }

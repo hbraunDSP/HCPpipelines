@@ -230,6 +230,7 @@ get_options()
 	unset NegInputImages
 	unset echospacing
 	unset GdCoeffs
+	unset StartWithEddy
 	DWIName="Diffusion"
 	DegreesOfFreedom=6
 	b0maxbval=${DEFAULT_B0_MAX_BVAL}
@@ -300,6 +301,10 @@ get_options()
 				;;
 			--printcom=*)
 				runcmd=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--startwitheddy)
+				StartWithEddy="TRUE"
 				index=$(( index + 1 ))
 				;;
 			*)
@@ -458,6 +463,9 @@ main()
 	# Establish tool name for logging
 	log_SetToolName "DiffPreprocPipeline.sh"
 	
+	if [ -n "$StartWithEddy" ]; then
+	log_Msg "Skipping Pre-Eddy Steps"
+	else
 	log_Msg "Invoking Pre-Eddy Steps"
 	${HCPPIPEDIR}/DiffusionPreprocessing/DiffPreprocPipeline_PreEddy.sh \
 		--path=${StudyFolder} \
@@ -469,6 +477,7 @@ main()
 		--echospacing=${echospacing} \
 		--b0maxbval=${b0maxbval} \
 		--printcom="${runcmd}"
+	fi
 	
 	log_Msg "Invoking Eddy Step"
 	${HCPPIPEDIR}/DiffusionPreprocessing/DiffPreprocPipeline_Eddy.sh \
@@ -476,6 +485,14 @@ main()
 		--subject=${Subject} \
 		--dwiname=${DWIName} \
 		--b0options=${Useb0options} \
+		--detailed-outlier-stats=True \
+		--replace-outliers=True \
+		--nvoxhp=2000 \
+		--sep_offs_move=True \
+		--rms=True \
+		--ff=10 \
+		--dont_peas \
+		--fwhm=10,0,0,0,0 \
 		--printcom="${runcmd}"
 	
 	log_Msg "Invoking Post-Eddy Steps"

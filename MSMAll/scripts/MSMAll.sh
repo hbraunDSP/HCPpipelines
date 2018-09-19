@@ -14,7 +14,8 @@ source ${HCPPIPEDIR}/global/scripts/log.shlib # Logging related functions
 log_SetToolName "${g_script_name}"
 log_Debug_On
 
-MATLAB_HOME="/export/matlab/R2013a"
+#MATLAB_HOME="/export/matlab/R2013a"
+MATLAB_HOME="${HCP_MATLAB_PATH}"
 log_Msg "MATLAB_HOME: ${MATLAB_HOME}"
 
 #
@@ -68,7 +69,10 @@ get_options()
 	unset g_rerun                       # ${ReRun}
 	unset g_reg_conf                    # ${RegConf}
 	unset g_reg_conf_vars               # ${RegConfVars}
-
+	unset g_matlab_run_mode               # ${RegConfVars}
+	
+	g_matlab_run_mode=0
+	
 	# parse arguments
 	local num_args=${#arguments[@]}
 	local argument
@@ -183,6 +187,10 @@ get_options()
 				# we have to handle grabbing the value slightly differently than
 				# in the other cases.
 				g_reg_conf_vars=${argument#--reg-conf-vars=}
+				index=$(( index + 1 ))
+				;;
+			--matlab-run-mode=*)
+				g_matlab_run_mode=${argument/*=/""}
 				index=$(( index + 1 ))
 				;;
 			*)
@@ -555,6 +563,8 @@ main()
 		log_Msg "PCARegString: ${PCARegString}"
 		log_Msg "SurfRegSTRING: ${SurfRegSTRING}"
 
+#if [ "a" = "b" ]; then
+
 		for Hemisphere in L R ; do
 			${Caret7_Command} -surface-vertex-areas ${DownSampleT1wFolder}/${Subject}.${Hemisphere}.midthickness.${LowResMesh}k_fs_LR.surf.gii ${DownSampleT1wFolder}/${Subject}.${Hemisphere}.midthickness_va.${LowResMesh}k_fs_LR.shape.gii 
 		done
@@ -563,7 +573,7 @@ main()
 		log_Msg "VAMean: ${VAMean}"
 
 		${Caret7_Command} -cifti-math "VA / ${VAMean}" ${DownSampleT1wFolder}/${Subject}.${Hemisphere}.midthickness_va_norm.${LowResMesh}k_fs_LR.dscalar.nii -var VA ${DownSampleT1wFolder}/${Subject}.${Hemisphere}.midthickness_va.${LowResMesh}k_fs_LR.dscalar.nii
-  
+	
 		log_Msg "NumIterations: ${NumIterations}"
 		i=1
 		while [ ${i} -le ${NumIterations} ] ; do
@@ -601,6 +611,8 @@ main()
 				inputweights="${RSNCostWeights}"
 				inputspatialmaps="${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}_${InRegName}.${LowResMesh}k_fs_LR.dscalar.nii"
 				outputspatialmaps="${DownSampleFolder}/${Subject}.individual_RSNs_d${ICAdim}_${InRegName}.${LowResMesh}k_fs_LR" #No Ext
+				#inputspatialmaps="${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}${PCARegString}.${LowResMesh}k_fs_LR.dscalar.nii"
+				#outputspatialmaps="${DownSampleFolder}/${Subject}.individual_RSNs_d${ICAdim}${PCARegString}.${LowResMesh}k_fs_LR" #No Ext
 				outputweights="${DownSampleFolder}/${Subject}.individual_RSNs_d${ICAdim}_weights.${LowResMesh}k_fs_LR.dscalar.nii"
 				Params="${NativeFolder}/${RegName}/Params.txt"
 				touch ${Params}
@@ -617,33 +629,79 @@ main()
 					done
 				fi
 
-				matlab_exe="${HCPPIPEDIR}"
-				matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
-				
-				matlab_compiler_runtime="${MATLAB_HOME}/MCR"
+				case ${g_matlab_run_mode} in
+				0)
+					matlab_exe="${HCPPIPEDIR}"
+					matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
+					
+					matlab_compiler_runtime="${MATLAB_HOME}/MCR"
 
-				matlab_function_arguments="'${inputspatialmaps}'"
-				matlab_function_arguments+=" '${inputdtseries}'"
-				matlab_function_arguments+=" '${inputweights}'"
-				matlab_function_arguments+=" '${outputspatialmaps}'"
-				matlab_function_arguments+=" '${outputweights}'"
-				matlab_function_arguments+=" '${Caret7_Command}'"
-				matlab_function_arguments+=" '${Method}'"
-				matlab_function_arguments+=" '${Params}'"
-				matlab_function_arguments+=" '${VN}'"
-				matlab_function_arguments+=" ${nTPsForSpectra}"
-				matlab_function_arguments+=" '${BC}'"
+					matlab_function_arguments="'${inputspatialmaps}'"
+					matlab_function_arguments+=" '${inputdtseries}'"
+					matlab_function_arguments+=" '${inputweights}'"
+					matlab_function_arguments+=" '${outputspatialmaps}'"
+					matlab_function_arguments+=" '${outputweights}'"
+					matlab_function_arguments+=" '${Caret7_Command}'"
+					matlab_function_arguments+=" '${Method}'"
+					matlab_function_arguments+=" '${Params}'"
+					matlab_function_arguments+=" '${VN}'"
+					matlab_function_arguments+=" ${nTPsForSpectra}"
+					matlab_function_arguments+=" '${BC}'"
 
-				matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.C.Iteration${i}.log 2>&1"
+					matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.C.Iteration${i}.log 2>&1"
 
-				matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
+					matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
+					
+					
+					# --------------------------------------------------------------------------------
+					log_Msg "Run Matlab command: ${matlab_cmd}"
+					# --------------------------------------------------------------------------------
 
-				# --------------------------------------------------------------------------------
-				log_Msg "Run Matlab command: ${matlab_cmd}"
-				# --------------------------------------------------------------------------------
+					echo "${matlab_cmd}" | bash
+					echo "Matlab command return code: $?"
+					;;
+				1)
+					matlab_script_file_name=${ResultsFolder}/run_msm.m
+					log_Msg "Creating Matlab script: ${matlab_script_file_name}"
 
-				echo "${matlab_cmd}" | bash
-				echo "Matlab command return code: $?"
+					if [ -e ${matlab_script_file_name} ]; then
+						echo "Removing old ${matlab_script_file_name}"
+						rm -f ${matlab_script_file_name}
+					fi
+
+
+					matlab_function_arguments="'${inputspatialmaps}'"
+					matlab_function_arguments+=",'${inputdtseries}'"
+					matlab_function_arguments+=",'${inputweights}'"
+					matlab_function_arguments+=",'${outputspatialmaps}'"
+					matlab_function_arguments+=",'${outputweights}'"
+					matlab_function_arguments+=",'${Caret7_Command}'"
+					matlab_function_arguments+=",'${Method}'"
+					matlab_function_arguments+=",'${Params}'"
+					matlab_function_arguments+=",'${VN}'"
+					matlab_function_arguments+=",${nTPsForSpectra}"
+					matlab_function_arguments+=",'${BC}'"
+					
+					mPath="${HCPPIPEDIR}/global/matlab "
+					mPath+="${HCPPIPEDIR}/MSMAll/scripts "
+					
+					touch ${matlab_script_file_name}
+					echo "addpath ${mPath}" >> ${matlab_script_file_name}
+					echo "MSMregression(${matlab_function_arguments});" >> ${matlab_script_file_name}
+
+					log_Msg "About to execute the following Matlab script"
+
+					cat ${matlab_script_file_name}
+					
+					matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.C.Iteration${i}.log 2>&1"
+					#exit 0
+					cat ${matlab_script_file_name} | matlab -nojvm -nodisplay -nosplash ${matlab_logging}
+					;;
+				*)
+					log_Msg "ERROR: Unrecognized Matlab run mode value: ${g_matlab_run_mode}"
+					exit 1
+				esac
+
 
 				rm ${Params} ${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}_${InRegName}.${LowResMesh}k_fs_LR.dscalar.nii
 
@@ -689,34 +747,79 @@ main()
 					echo ${Distortion} > ${Params}
 				fi
 
-				matlab_exe="${HCPPIPEDIR}"
-				matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
 
-				matlab_compiler_runtime="${MATLAB_HOME}/MCR"
+				case ${g_matlab_run_mode} in
+				0)
+					matlab_exe="${HCPPIPEDIR}"
+					matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
+					
+					matlab_compiler_runtime="${MATLAB_HOME}/MCR"
 
-				matlab_function_arguments="'${inputspatialmaps}'"
-				matlab_function_arguments+=" '${inputdtseries}'"
-				matlab_function_arguments+=" '${inputweights}'"
-				matlab_function_arguments+=" '${outputspatialmaps}'"
-				matlab_function_arguments+=" '${outputweights}'"
-				matlab_function_arguments+=" '${Caret7_Command}'"
-				matlab_function_arguments+=" '${Method}'"
-				matlab_function_arguments+=" '${Params}'"
-				matlab_function_arguments+=" '${VN}'"
-				matlab_function_arguments+=" ${nTPsForSpectra}"
-				matlab_function_arguments+=" '${BC}'"
+					matlab_function_arguments="'${inputspatialmaps}'"
+					matlab_function_arguments+=" '${inputdtseries}'"
+					matlab_function_arguments+=" '${inputweights}'"
+					matlab_function_arguments+=" '${outputspatialmaps}'"
+					matlab_function_arguments+=" '${outputweights}'"
+					matlab_function_arguments+=" '${Caret7_Command}'"
+					matlab_function_arguments+=" '${Method}'"
+					matlab_function_arguments+=" '${Params}'"
+					matlab_function_arguments+=" '${VN}'"
+					matlab_function_arguments+=" ${nTPsForSpectra}"
+					matlab_function_arguments+=" '${BC}'"
 
-				matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.T.Iteration${i}.log 2>&1"
+					matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.T.Iteration${i}.log 2>&1"
 
-				matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
+					matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
 
-				# --------------------------------------------------------------------------------
-				log_Msg "Run Matlab command: ${matlab_cmd}"
-				# --------------------------------------------------------------------------------
+					# --------------------------------------------------------------------------------
+					log_Msg "Run Matlab command: ${matlab_cmd}"
+					# --------------------------------------------------------------------------------
 
-				echo "${matlab_cmd}" | bash
-				echo "Matlab command return code: $?"
+					echo "${matlab_cmd}" | bash
+					echo "Matlab command return code: $?"
+					;;
+				1)
 
+					matlab_script_file_name=${ResultsFolder}/run_msm2.m
+					log_Msg "Creating Matlab script: ${matlab_script_file_name}"
+
+					if [ -e ${matlab_script_file_name} ]; then
+						echo "Removing old ${matlab_script_file_name}"
+						rm -f ${matlab_script_file_name}
+					fi
+
+					matlab_function_arguments="'${inputspatialmaps}'"
+					matlab_function_arguments+=",'${inputdtseries}'"
+					matlab_function_arguments+=",'${inputweights}'"
+					matlab_function_arguments+=",'${outputspatialmaps}'"
+					matlab_function_arguments+=",'${outputweights}'"
+					matlab_function_arguments+=",'${Caret7_Command}'"
+					matlab_function_arguments+=",'${Method}'"
+					matlab_function_arguments+=",'${Params}'"
+					matlab_function_arguments+=",'${VN}'"
+					matlab_function_arguments+=",${nTPsForSpectra}"
+					matlab_function_arguments+=",'${BC}'"
+					
+					mPath="${HCPPIPEDIR}/global/matlab "
+					mPath+="${HCPPIPEDIR}/MSMAll/scripts "
+					
+					touch ${matlab_script_file_name}
+					echo "addpath ${mPath}" >> ${matlab_script_file_name}
+					echo "MSMregression(${matlab_function_arguments});" >> ${matlab_script_file_name}
+
+					log_Msg "About to execute the following Matlab script"
+
+					cat ${matlab_script_file_name}
+					
+					matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.T.Iteration${i}.log 2>&1"
+					#exit 0
+					cat ${matlab_script_file_name} | matlab -nojvm -nodisplay -nosplash ${matlab_logging}
+					;;
+				*)
+					log_Msg "ERROR: Unrecognized Matlab run mode value: ${g_matlab_run_mode}"
+					exit 1
+				esac
+				
 				rm ${Params} ${TopographicWeights} ${DownSampleFolder}/${Subject}.atlas_Topographic_ROIs_${InRegName}.${LowResMesh}k_fs_LR.dscalar.nii
 
 				# Resample the individual maps so they are in the correct space
@@ -962,7 +1065,6 @@ main()
 			i=$(($i+1))
 		done
 
-
 		for Hemisphere in L R ; do
 			if [ $Hemisphere = "L" ] ; then 
 				Structure="CORTEX_LEFT"
@@ -1032,6 +1134,23 @@ main()
 			done
 		done
 
+#else
+
+#i=2
+#RegName="${RegNameStem}_${i}_d${ICAdim}_${Method}"
+			#InRegName="${RegName}"
+			#SurfRegSTRING="_${RegName}"
+			#Hemisphere=R
+			
+		#${Caret7_Command} -cifti-create-dense-scalar ${DownSampleT1wFolder}/${Subject}.midthickness_va.${LowResMesh}k_fs_LR.dscalar.nii -left-metric ${DownSampleT1wFolder}/${Subject}.L.midthickness_va.${LowResMesh}k_fs_LR.shape.gii -roi-left ${DownSampleFolder}/${Subject}.L.atlasroi.${LowResMesh}k_fs_LR.shape.gii -right-metric ${DownSampleT1wFolder}/${Subject}.R.midthickness_va.${LowResMesh}k_fs_LR.shape.gii -roi-right ${DownSampleFolder}/${Subject}.R.atlasroi.${LowResMesh}k_fs_LR.shape.gii
+		#VAMean=`${Caret7_Command} -cifti-stats ${DownSampleT1wFolder}/${Subject}.midthickness_va.${LowResMesh}k_fs_LR.dscalar.nii -reduce MEAN`
+		#log_Msg "VAMean: ${VAMean}"
+
+		#${Caret7_Command} -cifti-math "VA / ${VAMean}" ${DownSampleT1wFolder}/${Subject}.midthickness_va_norm.${LowResMesh}k_fs_LR.dscalar.nii -var VA ${DownSampleT1wFolder}/${Subject}.midthickness_va.${LowResMesh}k_fs_LR.dscalar.nii
+  
+#fi
+
+			
 		if [ ${UseMIGP} = "YES" ] ; then
 			inputdtseries="${ResultsFolder}/${OutputfMRIName}${fMRIProcSTRING}_PCA${PCARegString}.dtseries.nii"
 		else
@@ -1041,7 +1160,7 @@ main()
 		# Resample the atlas instead of the timeseries
 		log_Msg "Resample the atlas instead of the timeseries"
 		${Caret7_Command} -cifti-resample ${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}.${LowResMesh}k_fs_LR.dscalar.nii COLUMN ${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}.${LowResMesh}k_fs_LR.dscalar.nii COLUMN ADAP_BARY_AREA ENCLOSING_VOXEL ${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}_${RegName}.${LowResMesh}k_fs_LR.dscalar.nii -surface-postdilate 40 -left-spheres ${DownSampleFolder}/${Subject}.L.sphere.${LowResMesh}k_fs_LR.surf.gii ${DownSampleFolder}/${Subject}.L.sphere.${OutPCARegString}${RegName}.${LowResMesh}k_fs_LR.surf.gii -left-area-surfs ${DownSampleFolder}/${Subject}.L.midthickness.${LowResMesh}k_fs_LR.surf.gii ${DownSampleFolder}/${Subject}.L.midthickness.${LowResMesh}k_fs_LR.surf.gii -right-spheres ${DownSampleFolder}/${Subject}.R.sphere.${LowResMesh}k_fs_LR.surf.gii ${DownSampleFolder}/${Subject}.R.sphere.${OutPCARegString}${RegName}.${LowResMesh}k_fs_LR.surf.gii -right-area-surfs ${DownSampleFolder}/${Subject}.R.midthickness.${LowResMesh}k_fs_LR.surf.gii ${DownSampleFolder}/${Subject}.R.midthickness.${LowResMesh}k_fs_LR.surf.gii
-
+		
 		inputweights="NONE"
 		inputspatialmaps="${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}_${RegName}.${LowResMesh}k_fs_LR.dscalar.nii"
 		outputspatialmaps="${DownSampleFolder}/${Subject}.individual_RSNs_d${ICAdim}_${RegName}.${LowResMesh}k_fs_LR" #No Ext
@@ -1050,6 +1169,7 @@ main()
 		touch ${Params}
 		if [[ `echo -n ${Method} | grep "WR"` ]] ; then
 			Distortion="${DownSampleT1wFolder}/${Subject}.${Hemisphere}.midthickness_va_norm.${LowResMesh}k_fs_LR.dscalar.nii"
+			#Distortion="${DownSampleT1wFolder}/${Subject}.midthickness_va_norm.${LowResMesh}k_fs_LR.dscalar.nii"
 			echo ${Distortion} > ${Params}
 			LeftSurface="${DownSampleT1wFolder}/${Subject}.L.midthickness_${RegName}.${LowResMesh}k_fs_LR.surf.gii"
 			echo ${LeftSurface} >> ${Params}
@@ -1060,34 +1180,78 @@ main()
 				echo ${LowDim} >> ${Params}
 			done
 		fi
+		
+		case ${g_matlab_run_mode} in
+		0)
+			matlab_exe="${HCPPIPEDIR}"
+			matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
+			
+			matlab_compiler_runtime="${MATLAB_HOME}/MCR"
 
-		matlab_exe="${HCPPIPEDIR}"
-		matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
+			matlab_function_arguments="'${inputspatialmaps}'"
+			matlab_function_arguments+=" '${inputdtseries}'"
+			matlab_function_arguments+=" '${inputweights}'"
+			matlab_function_arguments+=" '${outputspatialmaps}'"
+			matlab_function_arguments+=" '${outputweights}'"
+			matlab_function_arguments+=" '${Caret7_Command}'"
+			matlab_function_arguments+=" '${Method}'"
+			matlab_function_arguments+=" '${Params}'"
+			matlab_function_arguments+=" '${VN}'"
+			matlab_function_arguments+=" ${nTPsForSpectra}"
+			matlab_function_arguments+=" '${BC}'"
 
-		matlab_compiler_runtime="${MATLAB_HOME}/MCR"
+			matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.1.log 2>&1"
 
-		matlab_function_arguments="'${inputspatialmaps}'"
-		matlab_function_arguments+=" '${inputdtseries}'"
-		matlab_function_arguments+=" '${inputweights}'"
-		matlab_function_arguments+=" '${outputspatialmaps}'"
-		matlab_function_arguments+=" '${outputweights}'"
-		matlab_function_arguments+=" '${Caret7_Command}'"
-		matlab_function_arguments+=" '${Method}'"
-		matlab_function_arguments+=" '${Params}'"
-		matlab_function_arguments+=" '${VN}'"
-		matlab_function_arguments+=" ${nTPsForSpectra}"
-		matlab_function_arguments+=" '${BC}'"
+			matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
 
-		matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.1.log 2>&1"
+			# --------------------------------------------------------------------------------
+			log_Msg "Run Matlab command: ${matlab_cmd}"
+			# --------------------------------------------------------------------------------
 
-		matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
+			echo "${matlab_cmd}" | bash
+			echo "Matlab command return code: $?"
+			;;
+		1)
 
-		# --------------------------------------------------------------------------------
-		log_Msg "Run Matlab command: ${matlab_cmd}"
-		# --------------------------------------------------------------------------------
+			matlab_script_file_name=${ResultsFolder}/run_msm3.m
+			log_Msg "Creating Matlab script: ${matlab_script_file_name}"
 
-		echo "${matlab_cmd}" | bash
-		echo "Matlab command return code: $?"
+			if [ -e ${matlab_script_file_name} ]; then
+				echo "Removing old ${matlab_script_file_name}"
+				rm -f ${matlab_script_file_name}
+			fi
+
+			matlab_function_arguments="'${inputspatialmaps}'"
+			matlab_function_arguments+=",'${inputdtseries}'"
+			matlab_function_arguments+=",'${inputweights}'"
+			matlab_function_arguments+=",'${outputspatialmaps}'"
+			matlab_function_arguments+=",'${outputweights}'"
+			matlab_function_arguments+=",'${Caret7_Command}'"
+			matlab_function_arguments+=",'${Method}'"
+			matlab_function_arguments+=",'${Params}'"
+			matlab_function_arguments+=",'${VN}'"
+			matlab_function_arguments+=",${nTPsForSpectra}"
+			matlab_function_arguments+=",'${BC}'"
+			
+			mPath="${HCPPIPEDIR}/global/matlab "
+			mPath+="${HCPPIPEDIR}/MSMAll/scripts "
+			
+			touch ${matlab_script_file_name}
+			echo "addpath ${mPath}" >> ${matlab_script_file_name}
+			echo "MSMregression(${matlab_function_arguments});" >> ${matlab_script_file_name}
+
+			log_Msg "About to execute the following Matlab script"
+
+			cat ${matlab_script_file_name}
+			
+			matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.1.log 2>&1"
+			#exit 0
+			cat ${matlab_script_file_name} | matlab -nojvm -nodisplay -nosplash ${matlab_logging}
+			;;
+		*)
+			log_Msg "ERROR: Unrecognized Matlab run mode value: ${g_matlab_run_mode}"
+			exit 1
+		esac
 
 		rm ${Params} ${DownSampleFolder}/${Subject}.atlas_RSNs_d${ICAdim}_${RegName}.${LowResMesh}k_fs_LR.dscalar.nii
 
@@ -1114,37 +1278,81 @@ main()
 		touch ${Params}
 		if [[ `echo -n ${Method} | grep "WR"` ]] ; then
 			Distortion="${DownSampleT1wFolder}/${Subject}.${Hemisphere}.midthickness_va_norm.${LowResMesh}k_fs_LR.dscalar.nii"
+			#Distortion="${DownSampleT1wFolder}/${Subject}.midthickness_va_norm.${LowResMesh}k_fs_LR.dscalar.nii"
 			echo ${Distortion} > ${Params}
 		fi
 
-		matlab_exe="${HCPPIPEDIR}"
-		matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
+		case ${g_matlab_run_mode} in
+		0)
+			matlab_exe="${HCPPIPEDIR}"
+			matlab_exe+="/MSMAll/scripts/Compiled_MSMregression/distrib/run_MSMregression.sh"
+			
+			matlab_compiler_runtime="${MATLAB_HOME}/MCR"
 
-		matlab_compiler_runtime="${MATLAB_HOME}/MCR"
+			matlab_function_arguments="'${inputspatialmaps}'"
+			matlab_function_arguments+=" '${inputdtseries}'"
+			matlab_function_arguments+=" '${inputweights}'"
+			matlab_function_arguments+=" '${outputspatialmaps}'"
+			matlab_function_arguments+=" '${outputweights}'"
+			matlab_function_arguments+=" '${Caret7_Command}'"
+			matlab_function_arguments+=" '${Method}'"
+			matlab_function_arguments+=" '${Params}'"
+			matlab_function_arguments+=" '${VN}'"
+			matlab_function_arguments+=" ${nTPsForSpectra}"
+			matlab_function_arguments+=" '${BC}'"
 
-		matlab_function_arguments="'${inputspatialmaps}'"
-		matlab_function_arguments+=" '${inputdtseries}'"
-		matlab_function_arguments+=" '${inputweights}'"
-		matlab_function_arguments+=" '${outputspatialmaps}'"
-		matlab_function_arguments+=" '${outputweights}'"
-		matlab_function_arguments+=" '${Caret7_Command}'"
-		matlab_function_arguments+=" '${Method}'"
-		matlab_function_arguments+=" '${Params}'"
-		matlab_function_arguments+=" '${VN}'"
-		matlab_function_arguments+=" ${nTPsForSpectra}"
-		matlab_function_arguments+=" '${BC}'"
+			matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.2.log 2>&1"
 
-		matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.2.log 2>&1"
+			matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
 
-		matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
+			# --------------------------------------------------------------------------------
+			log_Msg "Run Matlab command: ${matlab_cmd}"
+			# --------------------------------------------------------------------------------
 
-		# --------------------------------------------------------------------------------
-		log_Msg "Run Matlab command: ${matlab_cmd}"
-		# --------------------------------------------------------------------------------
+			echo "${matlab_cmd}" | bash
+			echo "Matlab command return code: $?"
+			;;
+		1)
+			matlab_script_file_name=${ResultsFolder}/run_msm4.m
+			log_Msg "Creating Matlab script: ${matlab_script_file_name}"
 
-		echo "${matlab_cmd}" | bash
-		echo "Matlab command return code: $?"
+			if [ -e ${matlab_script_file_name} ]; then
+				echo "Removing old ${matlab_script_file_name}"
+				rm -f ${matlab_script_file_name}
+			fi
 
+			matlab_function_arguments="'${inputspatialmaps}'"
+			matlab_function_arguments+=",'${inputdtseries}'"
+			matlab_function_arguments+=",'${inputweights}'"
+			matlab_function_arguments+=",'${outputspatialmaps}'"
+			matlab_function_arguments+=",'${outputweights}'"
+			matlab_function_arguments+=",'${Caret7_Command}'"
+			matlab_function_arguments+=",'${Method}'"
+			matlab_function_arguments+=",'${Params}'"
+			matlab_function_arguments+=",'${VN}'"
+			matlab_function_arguments+=",${nTPsForSpectra}"
+			matlab_function_arguments+=",'${BC}'"
+			
+			mPath="${HCPPIPEDIR}/global/matlab "
+			mPath+="${HCPPIPEDIR}/MSMAll/scripts "
+			
+			touch ${matlab_script_file_name}
+			echo "addpath ${mPath}" >> ${matlab_script_file_name}
+			echo "MSMregression(${matlab_function_arguments});" >> ${matlab_script_file_name}
+
+			log_Msg "About to execute the following Matlab script"
+
+			cat ${matlab_script_file_name}
+			
+			matlab_logging=">> ${StudyFolder}/${Subject}.MSMregression.matlab.2.log 2>&1"
+			#exit 0
+			cat ${matlab_script_file_name} | matlab -nojvm -nodisplay -nosplash ${matlab_logging}
+			;;
+		*)
+			log_Msg "ERROR: Unrecognized Matlab run mode value: ${g_matlab_run_mode}"
+			exit 1
+		esac
+		
 		rm ${Params} ${TopographicWeights} ${DownSampleFolder}/${Subject}.atlas_Topographic_ROIs_${RegName}.${LowResMesh}k_fs_LR.dscalar.nii
 
 		# Resample the individual maps so they are in the correct space

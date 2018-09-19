@@ -1,6 +1,6 @@
 #!/bin/bash 
 set -e
-echo -e "\n START: RibbonVolumeToSurfaceMapping"
+echo -e "\n START: RibbonVolumeToSurfaceMapping_1res"
 
 WorkingDirectory="$1"
 VolumefMRI="$2"
@@ -28,5 +28,5 @@ for Hemisphere in L R ; do
   ${CARET7DIR}/wb_command -metric-mask "$VolumefMRI"."$Hemisphere".atlasroi."$LowResMesh"k_fs_LR.func.gii "$DownsampleFolder"/"$Subject"."$Hemisphere".atlasroi."$LowResMesh"k_fs_LR.shape.gii "$VolumefMRI"."$Hemisphere".atlasroi."$LowResMesh"k_fs_LR.func.gii
 done
 
-echo " END: RibbonVolumeToSurfaceMapping"
+echo " END: RibbonVolumeToSurfaceMapping_1res"
 

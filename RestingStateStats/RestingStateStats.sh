@@ -140,6 +140,13 @@ usage()
 	echo "     0 = Use compiled Matlab"
 	echo "     1 = Use Matlab"
 	echo "     2 = Use Octave"
+	echo "   [--bc-mode={REVERT,NONE,CORRECT}] defaults to REVERT"
+	echo "     REVERT = Revert minimal preprocessing pipelines bias field correction"
+	echo "     NONE = Do not change bias field correction"
+	echo "     CORRECT = Revert and apply corrected bias field correction, requires ${ResultsFolder}/${fMRIName}_Atlas[${RegName}]_real_bias.dscalar.nii"
+	echo "   [--out-string=<out-string> defaults to 'stats'"
+	echo "   [--wm=<NONE | FreeSurfer Label Config File>]"
+	echo "   [--csf=<NONE | FreeSurfer Label Config File>]"
 	echo ""
 }
 
@@ -164,6 +171,13 @@ usage()
 #    0 - Use compiled Matlab
 #    1 - Use Matlab
 #    2 - Use Octave
+#  ${g_bc_mode} - bias correction mode
+#    REVERT - Revert minimal preprocessing pipelines bias field correction
+#    NONE - Do not change bias field correction
+#    CORRECT - Revert and apply corrected bias field correction, requires ${ResultsFolder}/${fMRIName}_Atlas[${RegName}]_real_bias.dscalar.nii
+#  ${g_out_string} - name string of output files
+#  ${g_wm} - Switch that turns on white matter timeseries related stats
+#  ${g_csf} - Switch that turns on csf timeseries related stats
 #
 get_options()
 {
@@ -182,11 +196,21 @@ get_options()
 	unset g_output_proc_string
 	unset g_dlabel_file
 	unset g_matlab_run_mode
-
+	unset g_bc_mode
+	unset g_out_string
+	unset g_wm
+	unset g_csf
+	unset g_bias_field_type
+	unset g_fmri_suffix
+	
 	# set default values 
 	g_reg_name="NONE"
 	g_dlabel_file="NONE"
 	g_matlab_run_mode=0
+	g_bc_mode="REVERT"
+	g_out_string="stats"
+	g_wm="NONE"
+	g_csf="NONE"
 
 	# parse arguments
 	local num_args=${#arguments[@]}
@@ -253,6 +277,31 @@ get_options()
 				g_matlab_run_mode=${argument/*=/""}
 				index=$(( index + 1 ))
 				;;
+			--bc-mode=*)
+				g_bc_mode=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--out-string=*)
+				g_out_string=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+		  --wm=*)
+				g_wm=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--csf=*)
+				g_csf=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--biasfield=*)
+				g_bias_field_type=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--fmrisuffix=*)
+				g_fmri_suffix=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+				
 			*)
 				usage
 				echo "ERROR: unrecognized option: ${argument}"
@@ -359,6 +408,49 @@ get_options()
 		esac
 	fi
 
+	if [ -z "${g_bc_mode}" ]; then
+		echo "ERROR: bias corrrection mode (--bc-mode=) required"
+		error_count=$(( error_count + 1 ))
+	else
+		case ${g_bc_mode} in 
+			REVERT)
+				;;
+			NONE)
+				;;
+			CORRECT)
+				;;
+			*)
+				echo "ERROR: bias corrrection mode must be REVERT, NONE, or CORRECT"
+				error_count=$(( error_count + 1 ))
+				;;
+		esac
+	fi
+
+	if [ -z "${g_out_string}" ]; then
+		echo "ERROR: out string required"
+		error_count=$(( error_count + 1 ))
+	else
+		log_Msg "g_out_string: ${g_out_string}"
+	fi
+
+	if [ -z "${g_wm}" ]; then
+		echo "ERROR: WM switch required"
+		error_count=$(( error_count + 1 ))
+	else
+		log_Msg "g_wm: ${g_wm}"
+	fi
+
+	if [ -z "${g_csf}" ]; then
+		echo "ERROR: CSF switch required"
+		error_count=$(( error_count + 1 ))
+	else
+		log_Msg "g_csf: ${g_csf}"
+	fi
+
+	if [ ! -z "${g_bias_field_type}" ]; then
+		log_Msg "g_bias_field_type: ${g_bias_field_type}"
+	fi
+	
 	if [ ${error_count} -gt 0 ]; then
 		echo "For usage information, use --help"
 		exit 1
@@ -388,11 +480,17 @@ main()
 	ResultsFolder="${AtlasFolder}/Results/${g_fmri_name}"
 	log_Msg "ResultsFolder: ${ResultsFolder}"
 
+	######
+	g_fmri_name_orig="${g_fmri_name}"
+	g_fmri_name="${g_fmri_name}${g_fmri_suffix}"
+	#######
+	
 	DownsampleFolder="${AtlasFolder}/fsaverage_LR${g_low_res_mesh}k"
 	log_Msg "DownsampleFolder: ${DownsampleFolder}"
 
 	ROIFolder="${AtlasFolder}/ROIs"
 	log_Msg "ROIFolder: ${ROIFolder}"
+
 
 	ICAFolder="${ResultsFolder}/${g_fmri_name}_hp${g_high_pass}.ica/filtered_func_data.ica"
 	log_Msg "ICAFolder: ${ICAFolder}"
@@ -404,13 +502,20 @@ main()
 		unset g_dlabel_file
 	fi
 	
-	if [ ! ${g_reg_name} = "NONE" ] ; then
-		RegString="_${g_reg_name}"
-	else
+	if [ "${g_reg_name}" = "FS" ]; then
+		RegString=""
+		g_reg_name="reg.reg_LR"
+	elif [ "${g_reg_name}" = "MSMSulc" ] || [ "${g_reg_name}" = "NONE" ]; then
 		RegString=""
 		g_reg_name="MSMSulc"
+	else
+		RegString="_${g_reg_name}"
 	fi
 
+	if [ "${g_low_res_mesh}" != "32" ]; then
+		RegString="${RegString}.${g_low_res_mesh}k"
+	fi
+	
 	### Calculate CIFTI version of the bias field (which is removed as part of the fMRI minimal pre-processing)
 	### so that the bias field can be "restored" prior to the variance decomposition
 	### i.e., so that the estimate variance at each grayordinate reflects the scaling of the original data
@@ -423,37 +528,52 @@ main()
 	# Input File(s)
 	# ----------------------------------------
 
-	# input image - Result of Structural Preprocessing
-	inputImage="${AtlasFolder}/BiasField.nii.gz"
 
-	# reference image - Collected File, retrieved from Functional Preprocessing
-	referenceImage="${ResultsFolder}/${g_fmri_name}_SBRef.nii.gz"
+	if [ "${g_bias_field_type}" = "SEBASED" ]; then
+		origBias="${ResultsFolder}/${g_fmri_name_orig}_sebased_bias.nii.gz"
+		inputImage="${ResultsFolder}/BiasField.${g_final_fmri_res}.nii.gz"
+		cp -f $origBias $inputImage
+	else
+		# input image - Result of Structural Preprocessing
+		inputImage="${AtlasFolder}/BiasField.nii.gz"
 
-	# pre-transform - identity matrix from FSL distribution
-	preTransform="${FSLDIR}/etc/flirtsch/ident.mat"
+		# reference image - Collected File, retrieved from Functional Preprocessing
+		referenceImage="${ResultsFolder}/${g_fmri_name_orig}_SBRef.nii.gz"
 
-	# ----------------------------------------
-	# Ouput File(s)
-	# ----------------------------------------
+		# pre-transform - identity matrix from FSL distribution
+		preTransform="${FSLDIR}/etc/flirtsch/ident.mat"
 
-	# newBiasField - newly created file
-	newBiasField="${ResultsFolder}/BiasField.${g_final_fmri_res}.nii.gz"
+		# ----------------------------------------
+		# Ouput File(s)
+		# ----------------------------------------
 
-	${FSLDIR}/bin/applywarp \
-		--rel \
-		--interp=spline \
-		-i ${inputImage} \
-		-r ${referenceImage} \
-		--premat=${preTransform} \
-		-o ${newBiasField}
+		# newBiasField - newly created file
+		newBiasField="${ResultsFolder}/BiasField.${g_final_fmri_res}.nii.gz"
 
-	# ----------------------------------------
-	# Input File(s) 
-	# ----------------------------------------
+		${FSLDIR}/bin/applywarp \
+			--rel \
+			--interp=spline \
+			-i ${inputImage} \
+			-r ${referenceImage} \
+			--premat=${preTransform} \
+			-o ${newBiasField}
+		
+		# ----------------------------------------
+		# Input File(s) 
+		# ----------------------------------------
 
-	# input image - Result of previous step
-	inputImage="${ResultsFolder}/BiasField.${g_final_fmri_res}.nii.gz"
+		# input image - Result of previous step
+		inputImage="${ResultsFolder}/BiasField.${g_final_fmri_res}.nii.gz"
 
+
+		if [ "${g_bias_field_type}" = "ONES" ]; then
+			#newname=`remove_ext ${inputImage}`.ONES.nii.gz
+			${FSLDIR}/bin/fslmaths ${inputImage} -mul 0 -add 1 ${inputImage}
+			#newBiasField=${newname}
+			#inputImage=${newname}
+		fi
+	fi
+	
 	# ----------------------------------------
 	# Output Files(s)
 	# ----------------------------------------
@@ -491,7 +611,7 @@ main()
  		ribbonOutter="${NativeFolder}/${g_subject}.${Hemisphere}.pial.native.surf.gii"
 
 		# ribbon constraint ROI volume - From Functional Preprocessing
- 		roiVolume="${ResultsFolder}/RibbonVolumeToSurfaceMapping/goodvoxels.nii.gz"
+ 		roiVolume="${ResultsFolder}/RibbonVolumeToSurfaceMapping${g_fmri_suffix}/goodvoxels.nii.gz"
 
 		# ----------------------------------------
 		# Output File(s)
@@ -650,6 +770,8 @@ main()
 	
 	unset POSIXLY_CORRECT
 
+	echo "$g_brain_ordinates_res == $g_final_fmri_res"
+	#if [ 1 -eq `echo "sqrt(($g_brain_ordinates_res - $g_final_fmri_res)^2) < .001" | bc -l` ]; then
 	if [ 1 -eq `echo "$g_brain_ordinates_res == $g_final_fmri_res" | bc -l` ] ; then
 		log_Msg "Using the same fMRI and grayordinates space resolution"
 		log_Msg "Use the simple algorithm to project bias field into subcortical CIFTI space like fMRI"
@@ -764,8 +886,84 @@ main()
 	log_Msg "End creation of CIFTI bias field"
 	# --------------------------------------------------------------------------------
 
+	if [ ! ${g_wm} = "NONE" ] ; then
+
+		# --------------------------------------------------------------------------------
+		log_Msg "Create white matter timeseries related stats"
+		# --------------------------------------------------------------------------------
+
+		${CARET7DIR}/wb_command \
+			-volume-label-import ${ROIFolder}/wmparc.${g_brain_ordinates_res}.nii.gz ${g_wm} \
+			${ROIFolder}/WMReg.${g_final_fmri_res}.nii.gz -discard-others -drop-unused-labels
+		
+		for Hemisphere in L R ; do
+			${CARET7DIR}/wb_command \
+				-metric-to-volume-mapping ${DownsampleFolder}/${g_subject}.${Hemisphere}.atlasroi.${g_low_res_mesh}k_fs_LR.shape.gii \
+				${DownsampleFolder}/${g_subject}.${Hemisphere}.midthickness.${g_low_res_mesh}k_fs_LR.surf.gii \
+				${ROIFolder}/WMReg.${g_final_fmri_res}.nii.gz ${ROIFolder}/${Hemisphere}.${g_final_fmri_res}.nii.gz \
+				-ribbon-constrained \
+				${DownsampleFolder}/${g_subject}.${Hemisphere}.white.${g_low_res_mesh}k_fs_LR.surf.gii \
+				${DownsampleFolder}/${g_subject}.${Hemisphere}.pial.${g_low_res_mesh}k_fs_LR.surf.gii
+		done
+		
+		${FSLDIR}/bin/fslmaths ${ROIFolder}/ROIs.${g_brain_ordinates_res}.nii.gz -add ${ROIFolder}/L.${g_final_fmri_res}.nii.gz -add ${ROIFolder}/R.${g_final_fmri_res}.nii.gz -dilD -dilD ${ROIFolder}/WMRegAvoid.${g_final_fmri_res}.nii.gz
+		${FSLDIR}/bin/fslmaths ${ROIFolder}/WMReg.${g_final_fmri_res}.nii.gz -bin -sub ${ROIFolder}/WMRegAvoid.${g_final_fmri_res}.nii.gz -thr 1 ${ROIFolder}/WMReg.${g_final_fmri_res}.nii.gz
+		rm ${ROIFolder}/L.${g_final_fmri_res}.nii.gz ${ROIFolder}/R.${g_final_fmri_res}.nii.gz ${ROIFolder}/WMRegAvoid.${g_final_fmri_res}.nii.gz
+		${FSLDIR}/bin/fslmeants -i ${ResultsFolder}/${g_fmri_name}.nii.gz -o ${ResultsFolder}/${g_fmri_name}_WM.txt -m ${ROIFolder}/WMReg.${g_final_fmri_res}.nii.gz
+		WM="${ResultsFolder}/${g_fmri_name}_WM.txt"
+	else
+		WM="NONE"
+	fi
+	
+	if [ ! ${g_csf} = "NONE" ] ; then
+
+		# --------------------------------------------------------------------------------
+		log_Msg "Create CSF timeseries related stats"
+		# --------------------------------------------------------------------------------
+
+		${CARET7DIR}/wb_command \
+			-volume-label-import ${ROIFolder}/wmparc.${g_brain_ordinates_res}.nii.gz ${g_csf} \
+			${ROIFolder}/CSFReg.${g_final_fmri_res}.nii.gz -discard-others -drop-unused-labels
+
+		for Hemisphere in L R ; do
+			${CARET7DIR}/wb_command \
+				-metric-to-volume-mapping ${DownsampleFolder}/${g_subject}.${Hemisphere}.atlasroi.${g_low_res_mesh}k_fs_LR.shape.gii \
+				${DownsampleFolder}/${g_subject}.${Hemisphere}.midthickness.${g_low_res_mesh}k_fs_LR.surf.gii \
+				${ROIFolder}/CSFReg.${g_final_fmri_res}.nii.gz ${ROIFolder}/${Hemisphere}.${g_final_fmri_res}.nii.gz \
+				-ribbon-constrained \
+				${DownsampleFolder}/${g_subject}.${Hemisphere}.white.${g_low_res_mesh}k_fs_LR.surf.gii \
+				${DownsampleFolder}/${g_subject}.${Hemisphere}.pial.${g_low_res_mesh}k_fs_LR.surf.gii
+		done
+
+		${FSLDIR}/bin/fslmaths ${ROIFolder}/ROIs.${g_brain_ordinates_res}.nii.gz -add ${ROIFolder}/L.${g_final_fmri_res}.nii.gz -add ${ROIFolder}/R.${g_final_fmri_res}.nii.gz -dilD -dilD ${ROIFolder}/CSFRegAvoid.${g_final_fmri_res}.nii.gz
+		${FSLDIR}/bin/fslmaths ${ROIFolder}/CSFReg.${g_final_fmri_res}.nii.gz -bin -sub ${ROIFolder}/CSFRegAvoid.${g_final_fmri_res}.nii.gz -thr 1 ${ROIFolder}/CSFReg.${g_final_fmri_res}.nii.gz
+		rm ${ROIFolder}/L.${g_final_fmri_res}.nii.gz ${ROIFolder}/R.${g_final_fmri_res}.nii.gz ${ROIFolder}/CSFRegAvoid.${g_final_fmri_res}.nii.gz
+		${FSLDIR}/bin/fslmeants -i ${ResultsFolder}/${g_fmri_name}.nii.gz -o ${ResultsFolder}/${g_fmri_name}_CSF.txt -m ${ROIFolder}/CSFReg.${g_final_fmri_res}.nii.gz
+		CSF="${ResultsFolder}/${g_fmri_name}_CSF.txt"
+	else
+		CSF="NONE"
+	fi
+
 	motionparameters="${ResultsFolder}/Movement_Regressors" #No .txt
+	if [ "X${g_fmri_suffix}" != X ] && [ -e "${ResultsFolder}/Movement_Regressors${g_fmri_suffix}.txt" ]; then
+		motionparameters="${ResultsFolder}/Movement_Regressors${g_fmri_suffix}" #No .txt
+	fi
+
+	do_skipHPF=false
+	#if [ `imtest ${ResultsFolder}/${g_fmri_name}` = 0 ] && [ `imtest ${ResultsFolder}/${g_fmri_name}_hp${g_high_pass}` != 0  ]; then
+	#	imln ${ResultsFolder}/${g_fmri_name}_hp${g_high_pass} ${ResultsFolder}/${g_fmri_name}
+	#fi
+	#if [ `imtest ${ResultsFolder}/${g_fmri_name}_Atlas${RegString}.dtseries` = 0 ] && [ `imtest ${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_hp${g_high_pass}.dtseries` != 0  ]; then
+	#	imln ${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_hp${g_high_pass}.dtseries ${ResultsFolder}/${g_fmri_name}_Atlas${RegString}.dtseries
+	#	do_skipHPF=true
+	#fi
+	#
+	#if [ 1 -eq `imtest ${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_hp${g_high_pass}.dtseries` ]; then
+	#	do_skipHPF=true
+	#fi
+	
 	TR=`${FSLDIR}/bin/fslval ${ResultsFolder}/${g_fmri_name} pixdim4`
+	
 	ICAs="${ICAFolder}/melodic_mix"
 	if [ -e ${FIXFolder}/HandNoise.txt ] ; then
 		noise="${FIXFolder}/HandNoise.txt"
@@ -774,6 +972,17 @@ main()
 	fi
 	dtseries="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}"
 	bias="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_BiasField.dscalar.nii"
+	if [ ${g_bc_mode} = "REVERT" ] ; then
+	  g_bc_mode="REVERT"
+	elif [ ${g_bc_mode} = "NONE" ] ; then
+	  g_bc_mode="NONE"
+	elif [ ${g_bc_mode} = "CORRECT" ] ; then
+	  g_bc_mode="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_real_bias.dscalar.nii"
+	fi
+
+	RssFolder="${ResultsFolder}/RestingStateStats${g_fmri_suffix}"
+	RssPrefix="${RssFolder}/${g_fmri_name}_Atlas${RegString}"
+	mkdir -p ${RssFolder}
 
 	case ${g_matlab_run_mode} in
 		0)
@@ -785,7 +994,7 @@ main()
 			matlab_compiler_runtime="/export/matlab/R2013a/MCR"
 
 			matlab_function_arguments="'${motionparameters}' ${g_high_pass} ${TR} '${ICAs}' '${noise}' "
-			matlab_function_arguments+="'${CARET7DIR}/wb_command' '${dtseries}' '${bias}' '' '${g_dlabel_file}'"
+			matlab_function_arguments+="'${CARET7DIR}/wb_command' '${dtseries}' '${bias}' '${RssPrefix}' '${g_dlabel_file}' '${g_bc_mode}' '${g_out_string}' '${WM}' '${CSF}'"
 
 			matlab_logging=">> ${g_path_to_study_folder}/${g_subject}_${g_fmri_name}.matlab.log 2>&1"
 
@@ -812,16 +1021,16 @@ main()
 			
 			# TBD: change these paths to use variables instead of hard coded paths
 			touch ${matlab_script_file_name}
-			echo "addpath /home/HCPpipeline/pipeline_tools/Pipelines_dev/RestingStateStats " >> ${matlab_script_file_name}
-			echo "addpath /home/HCPpipeline/pipeline_tools/gifti" >> ${matlab_script_file_name}
+			echo "addpath ${HCPPIPEDIR}/RestingStateStats " >> ${matlab_script_file_name}
+			echo "addpath ${HCPPIPEDIR}/global/matlab" >> ${matlab_script_file_name}
 			echo "addpath ${FSLDIR}/etc/matlab" >> ${matlab_script_file_name}
-			echo "RestingStateStats('${motionparameters}',${g_high_pass},${TR},'${ICAs}','${noise}','${CARET7DIR}/wb_command','${dtseries}','${bias}','','${g_dlabel_file}');" >> ${matlab_script_file_name}
+			echo "RestingStateStats('${motionparameters}',${g_high_pass},${TR},'${ICAs}','${noise}','${CARET7DIR}/wb_command','${dtseries}','${bias}','${RssPrefix}','${g_dlabel_file}','${g_bc_mode}','${g_out_string}','${WM}','${CSF}',${do_skipHPF});" >> ${matlab_script_file_name}
 
 			log_Msg "About to execute the following Matlab script"
 
 			cat ${matlab_script_file_name}
-			cat ${matlab_script_file_name} | matlab -nojvm -nodisplay -nosplash
-
+			#cat ${matlab_script_file_name} | ${HCP_MATLAB_PATH}/bin/matlab -nojvm -nodisplay -nosplash
+			cat ${matlab_script_file_name} | ${HCP_MATLAB_PATH}/bin/matlab -nodisplay -nosplash
 			;;
 
 		2)
@@ -839,7 +1048,7 @@ main()
 			echo "addpath /home/HCPpipeline/pipeline_tools/Pipelines_dev/RestingStateStats " >> ${octave_script_file_name}
 			echo "addpath /home/HCPpipeline/pipeline_tools/gifti" >> ${octave_script_file_name}
 			echo "addpath ${FSLDIR}/etc/matlab" >> ${octave_script_file_name}
-			echo "RestingStateStats('${motionparameters}',${g_high_pass},${TR},'${ICAs}','${noise}','${CARET7DIR}/wb_command','${dtseries}','${bias}','','${g_dlabel_file}');" >> ${octave_script_file_name}
+			echo "RestingStateStats('${motionparameters}',${g_high_pass},${TR},'${ICAs}','${noise}','${CARET7DIR}/wb_command','${dtseries}','${bias}','${RssPrefix}','${g_dlabel_file}','${g_bc_mode}','${g_out_string}','${WM}','${CSF}');" >> ${octave_script_file_name}
 
 			log_Msg "About to execute the following Octave script"
 
@@ -853,11 +1062,15 @@ main()
 			exit 1
 	esac
 
+	log_Msg "Moving results of Matlab function"
+	mv --verbose ${RssFolder}/${g_fmri_name}_Atlas${RegString}_${g_out_string}.txt ${ResultsFolder}
+	mv --verbose ${RssFolder}/${g_fmri_name}_Atlas${RegString}_${g_out_string}.dtseries.nii ${ResultsFolder}
+	mv --verbose ${RssFolder}/${g_fmri_name}_Atlas${RegString}_vn.dscalar.nii ${ResultsFolder}
 	if [ -e ${ResultsFolder}/Names.txt ] ; then 
 		rm ${ResultsFolder}/Names.txt
 	fi
 
-	Names=`cat ${dtseries}_stats.txt | head -1 | sed 's/,/ /g'`
+	Names=`cat ${dtseries}_${g_out_string}.txt | head -1 | sed 's/,/ /g'`
 	
 	i=1
 	for Name in ${Names} ; do
@@ -877,7 +1090,7 @@ main()
 	# ----------------------------------------
 
 	# ciftiIn - Generated by Matlab 
-	ciftiIn="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_stats.dtseries.nii"
+	ciftiIn="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_${g_out_string}.dtseries.nii"
 
 	# nameFile - From Previous Step
 	nameFile="${ResultsFolder}/Names.txt"
@@ -887,7 +1100,7 @@ main()
 	# ----------------------------------------
 
 	# ciftiOut - newly created file
-	ciftiOut="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_stats.dscalar.nii"
+	ciftiOut="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_${g_out_string}.dscalar.nii"
 
 	direction="ROW"
 	${CARET7DIR}/wb_command -cifti-convert-to-scalar ${ciftiIn} ${direction} ${ciftiOut} -name-file ${nameFile}
@@ -904,7 +1117,7 @@ main()
 	# ----------------------------------------
 
 	# ciftiIn - From Previous Step
-	ciftiIn="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_stats.dscalar.nii"
+	ciftiIn="${ResultsFolder}/${g_fmri_name}_Atlas${RegString}_${g_out_string}.dscalar.nii"
 
 	# ----------------------------------------
 	# Output File(s)

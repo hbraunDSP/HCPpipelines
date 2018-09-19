@@ -25,6 +25,8 @@ else
   XAPPLRESDIR=${MCRROOT}/X11/app-defaults ;
   export LD_LIBRARY_PATH;
   export XAPPLRESDIR;
+  PATH=$PATH:$LD_LIBRARY_PATH:$XAPPLRESDIR
+  export PATH;
   echo LD_LIBRARY_PATH is ${LD_LIBRARY_PATH};
   shift 1
   args=

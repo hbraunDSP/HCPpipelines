@@ -13,7 +13,7 @@
 % hp>0 the fullwidth (2*sigma) of the highpass, in seconds (not TRs)
 %
 
-function fix_3_clean(fixlist,aggressive,domot,hp)
+function fix_3_clean(fixlist,aggressive,domot,hp,skiphpf)
 if (isdeployed)
     aggressive = str2num(aggressive)
     domot = str2num(domot)
@@ -24,13 +24,23 @@ end
 CIFTI=getenv('FSL_FIX_CIFTIRW');
 WBC=getenv('FSL_FIX_WBC');
 
+func_name='fix_3_clean';
+fprintf('%s - fixlist: "%s"\n', func_name, fixlist);
+fprintf('%s - aggressive: %d\n', func_name, aggressive);
+fprintf('%s - domot: %d\n', func_name, domot);
+fprintf('%s - hp: %d\n', func_name, hp);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if(~exist('skiphpf','var'))
+	skiphpf=false;
+end
 
 %%%%  read set of bad components
 DDremove=load(fixlist);
 
 %%%%  find TR of data
 [grot,TR]=call_fsl('fslval filtered_func_data pixdim4'); TR=str2num(TR)
+fprintf('%s - After "fslval filtered_func_data pixdim4" - TR: %d\n', func_name, TR);
 
 %%%%  read and highpass CIFTI version of the data if it exists
 DObrainord=0;
@@ -41,14 +51,19 @@ if exist('Atlas.dtseries.nii','file') == 2
   if hp==0
     BO.cdata=detrend(BO.cdata')';
   end
-  if hp>0
+  if ~skiphpf && hp>0
     BOdimX=size(BO.cdata,1);  BOdimZnew=ceil(BOdimX/100);  BOdimT=size(BO.cdata,2);
     meanBO=mean(BO.cdata,2);
     BO.cdata=BO.cdata-repmat(meanBO,1,size(BO.cdata,2));
     save_avw(reshape([BO.cdata ; zeros(100*BOdimZnew-BOdimX,BOdimT)],10,10,BOdimZnew,BOdimT),'Atlas','f',[1 1 1 TR]);
-    call_fsl(sprintf('fslmaths Atlas -bptf %f -1 Atlas',0.5*hp/TR));
+%   call_fsl(sprintf('fslmaths Atlas -bptf %f -1 Atlas',0.5*hp/TR));
+    cmd_str=sprintf('fslmaths Atlas -bptf %f -1 Atlas',0.5*hp/TR);
+    fprintf('%s - About to execute: %s\n',func_name,cmd_str);
+    system(cmd_str);
     grot=reshape(read_avw('Atlas'),100*BOdimZnew,BOdimT);  BO.cdata=grot(1:BOdimX,:);  clear grot; BO.cdata=BO.cdata+repmat(meanBO,1,size(BO.cdata,2));
     ciftisave(BO,'Atlas_hp_preclean.dtseries.nii',WBC); % save out noncleaned hp-filtered data for future reference, as brainordinates file
+  elseif skiphpf
+    ciftisave(BO,'Atlas_hp_preclean.dtseries.nii',WBC);
   end
 end
 

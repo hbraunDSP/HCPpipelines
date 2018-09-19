@@ -21,16 +21,19 @@ if [ ! -e ${matrix} ]; then
 	exit 1
 fi
 
-m11=`avscale ${matrix} | grep Rotation -A 1 | tail -n 1| awk '{print $1}'`
-m12=`avscale ${matrix} | grep Rotation -A 1 | tail -n 1| awk '{print $2}'`
-m13=`avscale ${matrix} | grep Rotation -A 1 | tail -n 1| awk '{print $3}'`
-m21=`avscale ${matrix} | grep Rotation -A 2 | tail -n 1| awk '{print $1}'`
-m22=`avscale ${matrix} | grep Rotation -A 2 | tail -n 1| awk '{print $2}'`
-m23=`avscale ${matrix} | grep Rotation -A 2 | tail -n 1| awk '{print $3}'`
-m31=`avscale ${matrix} | grep Rotation -A 3 | tail -n 1| awk '{print $1}'`
-m32=`avscale ${matrix} | grep Rotation -A 3 | tail -n 1| awk '{print $2}'`
-m33=`avscale ${matrix} | grep Rotation -A 3 | tail -n 1| awk '{print $3}'`
+m11=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 1 | tail -n 1| awk '{print $1}'`
+m12=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 1 | tail -n 1| awk '{print $2}'`
+m13=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 1 | tail -n 1| awk '{print $3}'`
+m21=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 2 | tail -n 1| awk '{print $1}'`
+m22=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 2 | tail -n 1| awk '{print $2}'`
+m23=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 2 | tail -n 1| awk '{print $3}'`
+m31=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 3 | tail -n 1| awk '{print $1}'`
+m32=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 3 | tail -n 1| awk '{print $2}'`
+m33=`${FSLDIR}/bin/avscale ${matrix} | grep Rotation -A 3 | tail -n 1| awk '{print $3}'`
 
+echo "Rotate_bvecs.sh: ${matrix}"
+echo "$m11 $m12 $m13 $m21 $m22 $m23 $m31 $m32 $m33"
+  
 numbvecs=`cat ${input} | head -1 | tail -1 | wc -w`
 tmpout=${output}$$
 ii=1

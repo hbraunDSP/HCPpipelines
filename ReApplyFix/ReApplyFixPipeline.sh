@@ -56,7 +56,15 @@ get_options()
 	unset g_fmri_name                # fMRIName
 	unset g_high_pass                # HighPass
 	unset g_reg_name                 # RegName
-
+	unset g_matlab_run_mode
+	unset g_fmri_suffix
+	unset g_cleanvol			
+	unset g_atlas_suffix	
+	unset g_skip_hpf				
+	
+	#set defaults
+	g_matlab_run_mode=0
+	
 	# parse arguments
 	local num_args=${#arguments[@]}
 	local argument
@@ -92,6 +100,26 @@ get_options()
 				;;
 			--reg-name=*)
 				g_reg_name=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--matlab-run-mode=*)
+				g_matlab_run_mode=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--fmrisuffix=*)
+				g_fmri_suffix=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--cleanvol)
+				g_cleanvol=1
+				index=$(( index + 1 ))
+				;;
+			--atlas-suffix=*)
+				g_atlas_suffix=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--skiphpf)
+				g_skip_hpf=1
 				index=$(( index + 1 ))
 				;;
 			*)
@@ -187,14 +215,17 @@ main()
 
 	local RegName="${g_reg_name}"
 	log_Msg "RegName: ${RegName}"
-
+	
 	if [ ${RegName} != "NONE" ] ; then
 		RegString="_${RegName}"
 	else
 		RegString=""
 	fi
+	RegString+="${g_atlas_suffix}"
+	
 	log_Msg "RegString: ${RegString}"
 
+	
 	export FSL_FIX_CIFTIRW="${HCPPIPEDIR}/ReApplyFix/scripts"
 	export FSL_FIX_WBC="${Caret7_Command}"
 	export FSL_MATLAB_PATH="${FSLDIR}/etc/matlab"
@@ -207,45 +238,101 @@ main()
 	local domot=1
 	local hp=${HighPass}
 	local fixlist=".fix"
-	local fmri_orig="${fMRIName}"
-	local fmri=${fMRIName}
-
+	local fmri_orig="${fMRIName}${g_fmri_suffix}"
+	local fmri="${fMRIName}${g_fmri_suffix}"
+	
+	local skiphpf=false
+	if [ -n ${g_skip_hpf} ]; then
+		skiphpf=true
+	fi
+	
 	DIR=`pwd`
-	cd ${StudyFolder}/${Subject}/MNINonLinear/Results/${fMRIName}/${fMRIName}_hp${HighPass}.ica
+	cd ${StudyFolder}/${Subject}/MNINonLinear/Results/${fMRIName}/${fmri}_hp${HighPass}.ica
 
-	if [ -f ../${fmri_orig}_Atlas${RegString}.dtseries.nii ] ; then
+	#use HandNoise if available
+	if [ -e "./HandNoise.txt" ] ; then
+		fixlist="HandNoise.txt"
+	fi
+	
+	if [ -e ../${fmri_orig}_Atlas${RegString}.dtseries.nii ] ; then
 		$FSLDIR/bin/imln ../${fmri_orig}_Atlas${RegString}.dtseries.nii Atlas.dtseries.nii
 	fi
 
 	$FSLDIR/bin/imln ../$fmri filtered_func_data
 
+	motionparameters="../Movement_Regressors.txt"
+	if [ "X${g_fmri_suffix}" != X ] && [ -e "../Movement_Regressors${g_fmri_suffix}.txt" ]; then
+		motionparameters="../Movement_Regressors${g_fmri_suffix}.txt"
+	fi
+	
 	mkdir -p mc
-	if [ -f ../Movement_Regressors.txt ] ; then
-		cat ../Movement_Regressors.txt | awk '{ print $4 " " $5 " " $6 " " $1 " " $2 " " $3}' > mc/prefiltered_func_data_mcf.par
+	if [ -f ${motionparameters} ] ; then
+		cat ${motionparameters} | awk '{ print $4 " " $5 " " $6 " " $1 " " $2 " " $3}' > mc/prefiltered_func_data_mcf.par
 	else
 		echo "ERROR: Movement_Regressors.txt not retrieved properly." 
 		exit -1
 	fi 
 
-	# Use Compiled Matlab
-	local matlab_exe="${HCPPIPEDIR}"
-	matlab_exe+="/ReApplyFix/scripts/Compiled_fix_3_clean_no_vol/distrib/run_fix_3_clean_no_vol.sh"
+	mPath="${HCPPIPEDIR}/global/matlab "
+	mPath+="${FSL_FIXDIR} "
+	mPath+="${HCPPIPEDIR}/ReApplyFix/scripts "
+	log_Msg "mPath: ${mPath}"
+		
+	case ${g_matlab_run_mode} in
+	0)
+		# Use Compiled Matlab
+		local matlab_exe="${HCPPIPEDIR}"
+		matlab_exe+="/ReApplyFix/scripts/Compiled_fix_3_clean_no_vol/distrib/run_fix_3_clean_no_vol.sh"
 
-	# TBD: Use environment variable instead of fixed path!
-	local matlab_compiler_runtime="/export/matlab/R2013a/MCR"
+		# TBD: Use environment variable instead of fixed path!
+		local matlab_compiler_runtime="/export/matlab/R2013a/MCR"
 
-	local matlab_function_arguments="'${fixlist}' ${aggressive} ${domot} ${hp}"
-	
-	local matlab_logging=">> ${StudyFolder}/${Subject}_${fMRIName}_${HighPass}_${RegString}.matlab.log 2>&1"
+		local matlab_function_arguments="'${fixlist}' ${aggressive} ${domot} ${hp}"
+		
+		local matlab_logging=">> ${StudyFolder}/${Subject}_${fMRIName}_${HighPass}${RegString}.matlab.log 2>&1"
 
-	matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
+		matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
 
-	# --------------------------------------------------------------------------------
-	log_Msg "Run matlab command: ${matlab_cmd}"
-	# --------------------------------------------------------------------------------
-	echo "${matlab_cmd}" | bash
-	echo $?
+		# --------------------------------------------------------------------------------
+		log_Msg "Run matlab command: ${matlab_cmd}"
+		# --------------------------------------------------------------------------------
+		echo "${matlab_cmd}" | bash
+		echo $?
+		;;
+	1)
+		# Use Matlab - Untested
+		matlab_script_file_name=./reapplyfix.m
+		log_Msg "Creating Matlab script: ${matlab_script_file_name}"
 
+		if [ -e ${matlab_script_file_name} ]; then
+			echo "Removing old ${matlab_script_file_name}"
+			rm -f ${matlab_script_file_name}
+		fi
+
+		touch ${matlab_script_file_name}
+		echo "addpath ${mPath}" >> ${matlab_script_file_name}
+		
+		if [ -z "${g_cleanvol}" ]; then
+			echo "fix_3_clean_no_vol('${fixlist}', ${aggressive}, ${domot}, ${hp}, ${skiphpf});" >> ${matlab_script_file_name}
+		else
+			echo "fix_3_clean('${fixlist}', ${aggressive}, ${domot}, ${hp}, ${skiphpf});" >> ${matlab_script_file_name}
+		fi
+		
+		local matlab_logging=">> ${StudyFolder}/${Subject}_${fMRIName}_${HighPass}${RegString}.matlab.log 2>&1"
+
+		log_Msg "About to execute the following Matlab script"
+
+		cat ${matlab_script_file_name}
+		cat ${matlab_script_file_name} | matlab -nojvm -nodisplay -nosplash ${matlab_logging}
+
+		;;
+	2)
+		#KJ: Octave not yet written
+		;;
+	*)
+			log_Msg "ERROR: Unrecognized Matlab run mode value: ${g_matlab_run_mode}"
+			exit 1
+	esac
 
 #matlab -nojvm -nodisplay -nosplash <<M_PROG
 #${ML_PATHS} fix_3_clean_no_vol('${fixlist}',${aggressive},${domot},${hp});
@@ -254,8 +341,8 @@ main()
 
 	cd ${DIR}
 
-	fmri="${StudyFolder}/${Subject}/MNINonLinear/Results/${fMRIName}/${fMRIName}_hp${HighPass}"
-	fmri_orig="${StudyFolder}/${Subject}/MNINonLinear/Results/${fMRIName}/${fMRIName}"
+	fmri="${StudyFolder}/${Subject}/MNINonLinear/Results/${fMRIName}/${fMRIName}${g_fmri_suffix}_hp${HighPass}"
+	fmri_orig="${StudyFolder}/${Subject}/MNINonLinear/Results/${fMRIName}/${fMRIName}${g_fmri_suffix}"
 	if [ -f ${fmri}.ica/Atlas_clean.dtseries.nii ] ; then
 		/bin/mv ${fmri}.ica/Atlas_clean.dtseries.nii ${fmri_orig}_Atlas${RegString}_hp${hp}_clean.dtseries.nii
 	fi

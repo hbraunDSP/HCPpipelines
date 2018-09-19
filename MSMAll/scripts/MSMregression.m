@@ -98,10 +98,14 @@ if strcmp(Method(1:2),'WR')
             NODEts=demean((pinv(demean(GM.*DesignWeights)) * (demean(BO.cdata).*DenseWeights))');
             betaICA = ((pinv(NODEts) * demean(BO.cdata')))';
             NODEts=demean((pinv(demean(betaICA.*DesignWeights)) * (demean(BO.cdata).*DenseWeights))');
-            betaICA = ((pinv(NODEts) * demean(BO.cdata')))';        
-            for j=1:length(betaICA)
-                var(j)=atanh(corr(betaICA(j,:)',GM(j,:)'));
-            end
+            betaICA = ((pinv(NODEts) * demean(BO.cdata')))';  
+
+            fastcorr=@(a,b)sum(demean(a,2).*demean(b,2),2)./sqrt(sum(demean(a,2).^2,2).*sum(demean(b,2).^2,2));
+            var=atanh(fastcorr(betaICA,GM))';
+            var(isnan(var))=0;
+            %for j=1:length(betaICA)
+            %    var(j)=atanh(corr(betaICA(j,:)',GM(j,:)'));
+            %end
             corrs(:,i)=var';
         end
         SpatialWeightscii=BO;

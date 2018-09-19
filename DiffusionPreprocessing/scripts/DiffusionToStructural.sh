@@ -58,6 +58,7 @@ regimg="nodif"
 
 ${FSLDIR}/bin/imcp "$T1wBrainImage" "$WorkingDirectory"/"$T1wBrainImageFile"
 
+
 if [ "x${applyxfm}" = x ]; then
     #b0 FLIRT BBR and bbregister to T1w
     ${GlobalScripts}/epi_reg_dof --dof=${dof} --epi="$DataDirectory"/"$regimg" --t1="$T1wImage" --t1brain="$WorkingDirectory"/"$T1wBrainImageFile" --out="$WorkingDirectory"/"$regimg"2T1w_initII
@@ -67,6 +68,11 @@ if [ "x${applyxfm}" = x ]; then
     ${FSLDIR}/bin/fslmaths "$WorkingDirectory"/"$regimg"2T1w_initII.nii.gz -div "$BiasField" "$WorkingDirectory"/"$regimg"2T1w_restore_initII.nii.gz
 
     if [ "x$nofreesurfer" = x ]; then
+		FreeSurferSubjectID=`head -n1 "$FreeSurferSubjectFolder"/"$FreeSurferSubjectID"/mri/transforms/eye.dat`
+		#if [ -h "$FreeSurferSubjectFolder/$FreeSurferSubjectID" ]; then
+		#	FreeSurferSubjectID=$(basename `readlink "$FreeSurferSubjectFolder/$FreeSurferSubjectID"`)
+		#fi
+		
         SUBJECTS_DIR="$FreeSurferSubjectFolder"
         export SUBJECTS_DIR
         ${FREESURFER_HOME}/bin/bbregister --s "$FreeSurferSubjectID" --mov "$WorkingDirectory"/"$regimg"2T1w_restore_initII.nii.gz --surf white.deformed --init-reg "$FreeSurferSubjectFolder"/"$FreeSurferSubjectID"/mri/transforms/eye.dat --bold --reg "$WorkingDirectory"/EPItoT1w.dat --o "$WorkingDirectory"/"$regimg"2T1w.nii.gz

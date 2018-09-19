@@ -46,7 +46,6 @@ ro_time=`echo "${echo_spacing} * ${nPEsteps}" | bc -l`
 ro_time=`echo "scale=6; ${ro_time} / 1000" | bc -l`
 echo "${scriptName}: Total readout time is $ro_time secs"
 
-
 ################################################################################################
 ## Intensity Normalisation across Series 
 ################################################################################################

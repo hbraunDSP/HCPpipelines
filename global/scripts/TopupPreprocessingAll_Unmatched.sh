@@ -1,6 +1,6 @@
 #!/bin/bash 
 set -e
-set -xv
+
 # Requirements for this script
 #  installed versions of: FSL (version 5.0.6), HCP-gradunwarp (version 1.0.2)
 #  environment: as in SetUpHCPPipeline.sh  (or individually: FSLDIR, HCPPIPEDIR_Global, HCPPIPEDIR_Bin and PATH for gradient_unwarp.py)
@@ -30,6 +30,7 @@ Usage() {
   echo "            [--ojacobian=<output Jacobian image>]"
   echo "            --gdcoeffs=<gradient non-linearity distortion coefficients (Siemens format)>"
   echo "             [--topupconfig=<topup config file>]"
+  echo "            --usejacobian=<\"true\" or \"false\">"
   echo " "
   echo "   Note: the input SE EPI images should not be distortion corrected (for gradient non-linearities)"
 }
@@ -90,8 +91,21 @@ DistortionCorrectionFieldOutput=`getopt1 "--ofmap" $@`
 JacobianOutput=`getopt1 "--ojacobian" $@`  # "$8"
 GradientDistortionCoeffs=`getopt1 "--gdcoeffs" $@`  # "$9"
 TopupConfig=`getopt1 "--topupconfig" $@`  # "${11}"
+UseJacobian=`getopt1 "--usejacobian" $@`
 
 TopupDwellTime=`defaultopt $TopupDwellTime $DwellTime`
+
+if [[ -n $HCPPIPEDEBUG ]]
+then
+    set -x
+fi
+
+#sanity check the jacobian option
+if [[ "$UseJacobian" != "true" && "$UseJacobian" != "false" ]]
+then
+    log_Msg "the --usejacobian option must be 'true' or 'false'"
+    exit 1
+fi
 
 GlobalScripts=${HCPPIPEDIR_Global}
 
@@ -111,6 +125,19 @@ echo " " >> $WD/log.txt
 
 ########################################## DO WORK ########################################## 
 
+#check dimensions of phase versus sbref images
+#should we also check spacing info? could be off by tiny fractions, so probably not
+if [[ `fslhd $PhaseEncodeOne | grep '^dim[123]'` != `fslhd $ScoutInputName | grep '^dim[123]'` ]]
+then
+    log_Msg "Error: Spin echo fieldmap has different dimensions than scout image, this requires a manual fix"
+    exit 1
+fi
+#for kicks, check that the spin echo images match
+if [[ `fslhd $PhaseEncodeOne | grep '^dim[123]'` != `fslhd $PhaseEncodeTwo | grep '^dim[123]'` ]]
+then
+    log_Msg "Error: Spin echo fieldmap images have different dimensions!"
+    exit 1
+fi
 # PhaseOne and PhaseTwo are sets of SE EPI images with opposite phase encodes
 ${FSLDIR}/bin/imcp $PhaseEncodeOne ${WD}/PhaseOne.nii.gz
 ${FSLDIR}/bin/imcp $PhaseEncodeTwo ${WD}/PhaseTwo.nii.gz
@@ -130,6 +157,15 @@ if [ ! $GradientDistortionCoeffs = "NONE" ] ; then
       --in=${WD}/PhaseTwo \
       --out=${WD}/PhaseTwo_gdc \
       --owarp=${WD}/PhaseTwo_gdc_warp
+  if [[ $UseJacobian == "true" ]]
+  then
+    ${FSLDIR}/bin/fslmaths ${WD}/PhaseOne_gdc -mul ${WD}/PhaseOne_gdc_warp_jacobian ${WD}/PhaseOne_gdc
+    ${FSLDIR}/bin/fslmaths ${WD}/PhaseTwo_gdc -mul ${WD}/PhaseTwo_gdc_warp_jacobian ${WD}/PhaseTwo_gdc
+  fi
+  #overwrites inputs, no else needed
+  
+  #in the below stuff, the jacobians for both phases and sbref are applied unconditionally to a separate _jac image
+  #NOTE: "SBref" is actually the input scout, which is actually the _gdc scout, with gdc jacobian applied if applicable
 
   # Make a dilated mask in the distortion corrected space
   ${FSLDIR}/bin/fslmaths ${WD}/PhaseOne -abs -bin -dilD ${WD}/PhaseOne_mask
@@ -261,7 +297,10 @@ VolumeNumber=$((0 + 1))
 ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/PhaseOne_gdc -r ${WD}/PhaseOne_gdc --premat=${WD}/MotionMatrix_${vnum}.mat -w ${WD}/WarpField_${vnum} -o ${WD}/PhaseOne_gdc_dc
 ${FSLDIR}/bin/fslmaths ${WD}/PhaseOne_gdc_dc -mul ${WD}/Jacobian_${vnum} ${WD}/PhaseOne_gdc_dc_jac
 
-#############################################################################
+# Scout - warp and Jacobian modulate to get distortion corrected output
+${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/SBRef.nii.gz -r ${WD}/SBRef.nii.gz -w ${WD}/WarpField.nii.gz -o ${WD}/SBRef_dc.nii.gz
+${FSLDIR}/bin/fslmaths ${WD}/SBRef_dc.nii.gz -mul ${WD}/Jacobian.nii.gz ${WD}/SBRef_dc_jac.nii.gz
+# Calculate Equivalent Field Map
 ${FSLDIR}/bin/fslmaths ${WD}/TopupField -mul 6.283 ${WD}/TopupField
 ${FSLDIR}/bin/fslmaths ${WD}/Magnitudes.nii.gz -Tmean ${WD}/Magnitude.nii.gz
 ${FSLDIR}/bin/bet ${WD}/Magnitude ${WD}/Magnitude_brain -f 0.35 -m #Brain extract the magnitude image

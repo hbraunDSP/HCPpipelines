@@ -30,7 +30,6 @@ Usage() {
   echo "             --scoutin=<input scout image (EPI pre-sat, before gradient non-linearity distortion correction)>"
   echo "             --scoutgdcin=<input scout gradient nonlinearity distortion corrected image (EPI pre-sat)>"
   echo "             --oscout=<output transformed + distortion corrected scout image>"
-  echo "             --jacobianin=<input Jacobian image>"
   echo "             --ojacobian=<output transformed + distortion corrected Jacobian image>"
 }
 
@@ -92,7 +91,6 @@ GradientDistortionField=`getopt1 "--gdfield" $@`  # "${14}"
 ScoutInput=`getopt1 "--scoutin" $@`  # "${15}"
 ScoutInputgdc=`getopt1 "--scoutgdcin" $@`  # "${15}"
 ScoutOutput=`getopt1 "--oscout" $@`  # "${16}"
-JacobianIn=`getopt1 "--jacobianin" $@`  # "${17}"
 JacobianOut=`getopt1 "--ojacobian" $@`  # "${18}"
 
 ExtrafMRI=`getopt1 "--extrafmri" $@`  # "$2"

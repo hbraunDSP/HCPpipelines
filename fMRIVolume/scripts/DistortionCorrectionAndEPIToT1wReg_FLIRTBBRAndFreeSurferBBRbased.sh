@@ -72,6 +72,20 @@ Usage() {
   echo "             [--topupconfig=<topup config file>]"
   echo "             --ojacobian=<output filename for Jacobian image (in T1w space)>"
   echo "             --dof=<degrees of freedom for EPI-T1 FLIRT> (default 6)"
+  echo "             --fmriname=<name of fmri run> (only needed for SEBASED bias correction method)"
+  echo "             --subjectfolder=<subject processing folder> (only needed for TOPUP distortion correction method)"
+  echo "             --biascorrection=<method of bias correction>"
+  echo ""
+  echo "               \"SEBASED\""
+  echo "                 use bias field derived from spin echo, must also use --method=${SPIN_ECHO_METHOD_OPT}"
+  echo ""
+  echo "               \"LEGACY\""
+  echo "                 use the bias field derived from T1w and T2w images, same as pipeline version 3.14.1 or older"
+  echo ""
+  echo "               \"NONE\""
+  echo "                 don't do bias correction"
+  echo ""
+  echo "             --usejacobian=<\"true\" or \"false\">"
 }
 
 # function for parsing options
@@ -151,6 +165,58 @@ DistortionCorrection=`getopt1 "--method" $@`
 TopupConfig=`getopt1 "--topupconfig" $@`
 JacobianOut=`getopt1 "--ojacobian" $@`
 dof=`getopt1 "--dof" $@`
+NameOffMRI=`getopt1 "--fmriname" $@`
+SubjectFolder=`getopt1 "--subjectfolder" $@`
+BiasCorrection=`getopt1 "--biascorrection" $@`
+UseJacobian=`getopt1 "--usejacobian" $@`
+
+NoFreeSurfer=`getopt1 "--nofreesurfer" $@`
+
+
+#With new TOPUP options, we need to know what the original method 
+# was if we are going to resume
+OrigDistortionCorrection="$DistortionCorrection"
+if [[ "$DistortionCorrection" = *@* ]] ; then
+	OrigDistortionCorrection=${DistortionCorrection/*@/""}
+	DistortionCorrection=${DistortionCorrection/@*/""}
+fi
+
+
+if [[ -n $HCPPIPEDEBUG ]]
+then
+    set -x
+fi
+
+#error check bias correction opt
+case "$BiasCorrection" in
+    NONE)
+        UseBiasField=""
+    ;;
+    
+    LEGACY)
+        UseBiasField="${BiasField}"
+    ;;
+    
+    SEBASED)
+        if [[ "$OrigDistortionCorrection" != "${SPIN_ECHO_METHOD_OPT}" ]]
+        then
+            log_Msg "SEBASED bias correction is only available with --method=${SPIN_ECHO_METHOD_OPT}"
+            exit 1
+        fi
+        #note, this file doesn't exist yet, gets created by ComputeSpinEchoBiasField.sh
+        UseBiasField="${WD}/ComputeSpinEchoBiasField/${NameOffMRI}_sebased_bias.nii.gz"
+    ;;
+    
+    "")
+        log_Msg "--biascorrection option not specified"
+        exit 1
+    ;;
+    
+    *)
+        log_Msg "unrecognized value for bias correction: $BiasCorrection"
+        exit 1
+esac
+
 
 ScoutInputFile=`basename $ScoutInputName`
 T1wBrainImageFile=`basename $T1wBrainImage`
@@ -161,7 +227,13 @@ WD=`defaultopt $WD ${RegOutput}.wdir`
 dof=`defaultopt $dof 6`
 GlobalScripts=${HCPPIPEDIR_Global}
 TopupConfig=`defaultopt $TopupConfig ${HCPPIPEDIR_Config}/b02b0.cnf`
-UseJacobian=false
+#sanity check the jacobian option
+if [[ "$UseJacobian" != "true" && "$UseJacobian" != "false" ]]
+then
+    log_Msg "the --usejacobian option must be 'true' or 'false'"
+    exit 1
+fi
+
 
 log_Msg "START"
 
@@ -269,11 +341,19 @@ case $DistortionCorrection in
         #${FSLDIR}/bin/convertwarp --relout --abs -r ${WD}/${ScoutInputFile}_undistorted_warp_abs -w ${WD}/${ScoutInputFile}_undistorted_warp_abs -o ${WD}/${ScoutInputFile}_undistorted_warp
         # create spline interpolated output for scout to T1w + apply bias field correction
         ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${T1wImage} -w ${WD}/${ScoutInputFile}_undistorted_warp.nii.gz -o ${WD}/${ScoutInputFile}_undistorted_1vol.nii.gz
-        ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted_1vol.nii.gz -div ${BiasField} ${WD}/${ScoutInputFile}_undistorted_1vol.nii.gz
+        #${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted_1vol.nii.gz -div ${BiasField} ${WD}/${ScoutInputFile}_undistorted_1vol.nii.gz
         ${FSLDIR}/bin/immv ${WD}/${ScoutInputFile}_undistorted_1vol.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz
         ###Jacobian Volume FAKED for Regular Fieldmaps (all ones) ###
-        ${FSLDIR}/bin/fslmaths ${T1wImage} -abs -add 1 -bin ${WD}/Jacobian2T1w.nii.gz
+        #${FSLDIR}/bin/fslmaths ${T1wImage} -abs -add 1 -bin ${WD}/Jacobian2T1w.nii.gz
+        #real jacobian, of just fieldmap warp (from epi_reg_dof)
+        #NOTE: convertwarp requires an output argument regardless
+        ${FSLDIR}/bin/convertwarp --rel -w ${WD}/${ScoutInputFile}_undistorted_warp.nii.gz -r ${WD}/${ScoutInputFile}_undistorted_warp.nii.gz --jacobian=${WD}/Jacobian2T1w.nii.gz -o ${WD}/junk_warp
+        #but, convertwarp's --jacobian output has 8 volumes, as it outputs all combinations of one-sided differences
+        #so, average them together
+        ${FSLDIR}/bin/fslmaths ${WD}/Jacobian2T1w.nii.gz -Tmean ${WD}/Jacobian2T1w.nii.gz
     
+        #jacobian and bias field are applied outside the case, as they are done the same as topup
+
         ;;
 
     ${SPIN_ECHO_METHOD_OPT})
@@ -295,42 +375,76 @@ case $DistortionCorrection in
             --owarp=${WD}/WarpField \
             --ojacobian=${WD}/Jacobian \
             --gdcoeffs=${GradientDistortionCoeffs} \
-            --topupconfig=${TopupConfig}
+            --topupconfig=${TopupConfig} \
+            --usejacobian=${UseJacobian}
 
         # create a spline interpolated image of scout (distortion corrected in same space)
         log_Msg "create a spline interpolated image of scout (distortion corrected in same space)"
         ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${ScoutInputName} -w ${WD}/WarpField.nii.gz -o ${WD}/${ScoutInputFile}_undistorted
 
         # apply Jacobian correction to scout image (optional)
-        if [ $UseJacobian = true ] ; then
+        # gdc jacobian is already applied in main script, where the gdc call for the scout is
+        if [[ $UseJacobian == "true" ]]
+        then
             log_Msg "apply Jacobian correction to scout image"
             ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -mul ${WD}/Jacobian.nii.gz ${WD}/${ScoutInputFile}_undistorted
         fi
 
         # register undistorted scout image to T1w
+        # this is just an initial registration, refined later in this script, but it is actually pretty good
         log_Msg "register undistorted scout image to T1w"
-        ${HCPPIPEDIR_Global}/epi_reg_dof --dof=${dof} --epi=${WD}/${ScoutInputFile}_undistorted --t1=${T1wImage} --t1brain=${WD}/${T1wBrainImageFile} --out=${WD}/${ScoutInputFile}_undistorted
+        ${HCPPIPEDIR_Global}/epi_reg_dof --dof=${dof} --epi=${WD}/${ScoutInputFile}_undistorted --t1=${T1wImage} --t1brain=${WD}/${T1wBrainImageFile} --out=${WD}/${ScoutInputFile}_undistorted2T1w_init
+
+        #copy the initial registration into the final affine's filename, as it is pretty good
+        #we need something to get between the spaces to compute an initial bias field
+        cp "${WD}/${ScoutInputFile}_undistorted2T1w_init.mat" "${WD}/fMRI2str.mat"
 
         # generate combined warpfields and spline interpolated images + apply bias field correction
         log_Msg "generate combined warpfields and spline interpolated images and apply bias field correction"
-        ${FSLDIR}/bin/convertwarp --relout --rel -r ${T1wImage} --warp1=${WD}/WarpField.nii.gz --postmat=${WD}/${ScoutInputFile}_undistorted.mat -o ${WD}/${ScoutInputFile}_undistorted_warp
-        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Jacobian.nii.gz -r ${T1wImage} --premat=${WD}/${ScoutInputFile}_undistorted.mat -o ${WD}/Jacobian2T1w.nii.gz
-        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${T1wImage} -w ${WD}/${ScoutInputFile}_undistorted_warp -o ${WD}/${ScoutInputFile}_undistorted
-
-        # apply Jacobian correction to scout image (optional)
-        if [ $UseJacobian = true ] ; then
-            log_Msg "apply Jacobian correction to scout image"
-            ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -div ${BiasField} -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz 
-        else
-            log_Msg "do not apply Jacobian correction to scout image"
-            ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -div ${BiasField} ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz 
+        ${FSLDIR}/bin/convertwarp --relout --rel -r ${T1wImage} --warp1=${WD}/WarpField.nii.gz --postmat=${WD}/${ScoutInputFile}_undistorted2T1w_init.mat -o ${WD}/${ScoutInputFile}_undistorted2T1w_init_warp
+        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Jacobian.nii.gz -r ${T1wImage} --premat=${WD}/${ScoutInputFile}_undistorted2T1w_init.mat -o ${WD}/Jacobian2T1w.nii.gz
+        #1-step resample from input (gdc) scout - NOTE: no longer includes jacobian correction, if specified
+        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${T1wImage} -w ${WD}/${ScoutInputFile}_undistorted2T1w_init_warp -o ${WD}/${ScoutInputFile}_undistorted2T1w_init
+        
+        #resample phase images to T1w space
+        #these files were obtained by the import script from the FieldMap directory, save them into the package and resample them
+        #we don't have the final transform to actual T1w space yet, that occurs later in this script
+        #but, we need the T1w segmentation to make the bias field, so use the initial registration above, then compute the bias field again at the end
+        Files="PhaseOne_gdc_dc PhaseTwo_gdc_dc SBRef_dc"
+        for File in ${Files}
+        do
+            #NOTE: this relies on TopupPreprocessingAll generating _jac versions of the files
+            if [[ $UseJacobian == "true" ]]
+            then
+                ${FSLDIR}/bin/applywarp --interp=spline -i "${WD}/FieldMap/${File}_jac" -r ${SubjectFolder}/T1w/T2w_acpc_dc.nii.gz --premat=${WD}/fMRI2str.mat -o ${WD}/${File}
+            else
+                ${FSLDIR}/bin/applywarp --interp=spline -i "${WD}/FieldMap/${File}" -r ${SubjectFolder}/T1w/T2w_acpc_dc.nii.gz --premat=${WD}/fMRI2str.mat -o ${WD}/${File}
+            fi
+        done
+        
+        #correct filename is already set in UseBiasField, but we have to compute it if using SEBASED
+        #we compute it in this script because it needs outputs from topup, and because it should be applied to the scout image
+        if [[ "$BiasCorrection" == "SEBASED" ]]
+        then
+            mkdir -p "$WD/ComputeSpinEchoBiasField"
+            "${HCPPIPEDIR_fMRIVol}/ComputeSpinEchoBiasField.sh" \
+                --workingdir="$WD/ComputeSpinEchoBiasField" \
+                --subjectfolder="$SubjectFolder" \
+                --fmriname="$NameOffMRI" \
+                --corticallut="$HCPPIPEDIR/global/config/FreeSurferCorticalLabelTableLut.txt" \
+                --subcorticallut="$HCPPIPEDIR/global/config/FreeSurferSubcorticalLabelTableLut.txt" \
+                --smoothingfwhm="2" \
+                --inputdir="$WD"
         fi
+            
 
         ;;
 
     ${RESUME_METHOD_OPT})
 
         log_Msg "SKIPPING DISTORTION CORRECTION.  Hopefully already completed?"
+        log_Msg "Resuming with original method: $OrigDistortionCorrection"
+        DistortionCorrection="$OrigDistortionCorrection"
         ;;
 
     ${RESUME_T1REG_METHOD_OPT})
@@ -340,28 +454,62 @@ case $DistortionCorrection in
         ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${ScoutInputName} -w ${WD}/WarpField.nii.gz -o ${WD}/${ScoutInputFile}_undistorted
 
         # apply Jacobian correction to scout image (optional)
-        if [ $UseJacobian = true ] ; then
+        # gdc jacobian is already applied in main script, where the gdc call for the scout is
+        if [[ $UseJacobian == "true" ]]
+        then
             log_Msg "apply Jacobian correction to scout image"
             ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -mul ${WD}/Jacobian.nii.gz ${WD}/${ScoutInputFile}_undistorted
         fi
 
+        # register undistorted scout image to T1w
+        # this is just an initial registration, refined later in this script, but it is actually pretty good
         log_Msg "register undistorted scout image to T1w"
-        ${HCPPIPEDIR_Global}/epi_reg_dof --dof=${dof} --epi=${WD}/${ScoutInputFile}_undistorted --t1=${T1wImage} --t1brain=${WD}/${T1wBrainImageFile} --out=${WD}/${ScoutInputFile}_undistorted
+        ${HCPPIPEDIR_Global}/epi_reg_dof --dof=${dof} --epi=${WD}/${ScoutInputFile}_undistorted --t1=${T1wImage} --t1brain=${WD}/${T1wBrainImageFile} --out=${WD}/${ScoutInputFile}_undistorted2T1w_init
+
+        #copy the initial registration into the final affine's filename, as it is pretty good
+        #we need something to get between the spaces to compute an initial bias field
+        cp "${WD}/${ScoutInputFile}_undistorted2T1w_init.mat" "${WD}/fMRI2str.mat"
 
         # generate combined warpfields and spline interpolated images + apply bias field correction
         log_Msg "generate combined warpfields and spline interpolated images and apply bias field correction"
-        ${FSLDIR}/bin/convertwarp --relout --rel -r ${T1wImage} --warp1=${WD}/WarpField.nii.gz --postmat=${WD}/${ScoutInputFile}_undistorted.mat -o ${WD}/${ScoutInputFile}_undistorted_warp
-        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Jacobian.nii.gz -r ${T1wImage} --premat=${WD}/${ScoutInputFile}_undistorted.mat -o ${WD}/Jacobian2T1w.nii.gz
-        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${T1wImage} -w ${WD}/${ScoutInputFile}_undistorted_warp -o ${WD}/${ScoutInputFile}_undistorted
-
-        # apply Jacobian correction to scout image (optional)
-        if [ $UseJacobian = true ] ; then
-            log_Msg "apply Jacobian correction to scout image"
-            ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -div ${BiasField} -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz 
-        else
-            log_Msg "do not apply Jacobian correction to scout image"
-            ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted -div ${BiasField} ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz 
+        ${FSLDIR}/bin/convertwarp --relout --rel -r ${T1wImage} --warp1=${WD}/WarpField.nii.gz --postmat=${WD}/${ScoutInputFile}_undistorted2T1w_init.mat -o ${WD}/${ScoutInputFile}_undistorted2T1w_init_warp
+        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Jacobian.nii.gz -r ${T1wImage} --premat=${WD}/${ScoutInputFile}_undistorted2T1w_init.mat -o ${WD}/Jacobian2T1w.nii.gz
+        #1-step resample from input (gdc) scout - NOTE: no longer includes jacobian correction, if specified
+        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${T1wImage} -w ${WD}/${ScoutInputFile}_undistorted2T1w_init_warp -o ${WD}/${ScoutInputFile}_undistorted2T1w_init
+        
+        #resample phase images to T1w space
+        #these files were obtained by the import script from the FieldMap directory, save them into the package and resample them
+        #we don't have the final transform to actual T1w space yet, that occurs later in this script
+        #but, we need the T1w segmentation to make the bias field, so use the initial registration above, then compute the bias field again at the end
+        Files="PhaseOne_gdc_dc PhaseTwo_gdc_dc SBRef_dc"
+        for File in ${Files}
+        do
+            #NOTE: this relies on TopupPreprocessingAll generating _jac versions of the files
+            if [[ $UseJacobian == "true" ]]
+            then
+                ${FSLDIR}/bin/applywarp --interp=spline -i "${WD}/FieldMap/${File}_jac" -r ${SubjectFolder}/T1w/T2w_acpc_dc.nii.gz --premat=${WD}/fMRI2str.mat -o ${WD}/${File}
+            else
+                ${FSLDIR}/bin/applywarp --interp=spline -i "${WD}/FieldMap/${File}" -r ${SubjectFolder}/T1w/T2w_acpc_dc.nii.gz --premat=${WD}/fMRI2str.mat -o ${WD}/${File}
+            fi
+        done
+        
+        #correct filename is already set in UseBiasField, but we have to compute it if using SEBASED
+        #we compute it in this script because it needs outputs from topup, and because it should be applied to the scout image
+        if [[ "$BiasCorrection" == "SEBASED" ]]
+        then
+            mkdir -p "$WD/ComputeSpinEchoBiasField"
+            "${HCPPIPEDIR_fMRIVol}/ComputeSpinEchoBiasField.sh" \
+                --workingdir="$WD/ComputeSpinEchoBiasField" \
+                --subjectfolder="$SubjectFolder" \
+                --fmriname="$NameOffMRI" \
+                --corticallut="$HCPPIPEDIR/global/config/FreeSurferCorticalLabelTableLut.txt" \
+                --subcorticallut="$HCPPIPEDIR/global/config/FreeSurferSubcorticalLabelTableLut.txt" \
+                --smoothingfwhm="2" \
+                --inputdir="$WD"
         fi
+            
+        log_Msg "Resuming after T1w with original method: $OrigDistortionCorrection"
+        DistortionCorrection="$OrigDistortionCorrection"
 	;;
 
     *)
@@ -371,93 +519,216 @@ case $DistortionCorrection in
 
 esac
 
-### FREESURFER BBR - found to be an improvement, probably due to better GM/WM boundary
-SUBJECTS_DIR=${FreeSurferSubjectFolder}
-export SUBJECTS_DIR
-#Check to see if FreeSurferNHP.sh was used
-log_Msg "Check to see if FreeSurferNHP.sh was used"
-if [ -e ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm ] ; then
-  #Perform Registration in FreeSurferNHP 1mm Space
-  log_Msg "${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm exists. FreeSurferNHP.sh was used."
-  log_Msg "Perform Registration in FreeSurferNHP 1mm Space"
-  ScoutImage="${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz"
-  ScoutImageFile="${WD}/${ScoutInputFile}_undistorted2T1w_init"
 
-  res=`fslorient -getsform $ScoutImage | cut -d " " -f 1 | cut -d "-" -f 2`
-  oldsform=`fslorient -getsform $ScoutImage`
-  newsform=""
-  i=1
-  while [ $i -le 12 ] ; do
-    oldelement=`echo $oldsform | cut -d " " -f $i`
-    newelement=`echo "scale=1; $oldelement / $res" | bc -l`
-    newsform=`echo "$newsform""$newelement"" "`
-    if [ $i -eq 4 ] ; then
-      originx="$newelement"
+# apply Jacobian correction and bias correction options to scout image
+if [[ $UseJacobian == "true" ]] ; then
+    log_Msg "apply Jacobian correction to scout image"
+    if [[ "$UseBiasField" != "" ]]
+    then
+        ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w_init -div ${UseBiasField} -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz
+    else
+        ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w_init -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz
     fi
-    if [ $i -eq 8 ] ; then
-      originy="$newelement"
-    fi
-    if [ $i -eq 12 ] ; then
-      originz="$newelement"
-    fi
-    i=$(($i+1))
-  done
-  newsform=`echo "$newsform""0 0 0 1" | sed 's/  / /g'`
-
-  cp "$ScoutImage" "$ScoutImageFile"_1mm.nii.gz
-  fslorient -setsform $newsform "$ScoutImageFile"_1mm.nii.gz
-  fslhd -x "$ScoutImageFile"_1mm.nii.gz | sed s/"dx = '${res}'"/"dx = '1'"/g | sed s/"dy = '${res}'"/"dy = '1'"/g | sed s/"dz = '${res}'"/"dz = '1'"/g | fslcreatehd - "$ScoutImageFile"_1mm_head.nii.gz
-  fslmaths "$ScoutImageFile"_1mm_head.nii.gz -add "$ScoutImageFile"_1mm.nii.gz "$ScoutImageFile"_1mm.nii.gz
-  fslorient -copysform2qform "$ScoutImageFile"_1mm.nii.gz
-  rm "$ScoutImageFile"_1mm_head.nii.gz
-  dimex=`fslval "$ScoutImageFile"_1mm dim1`
-  dimey=`fslval "$ScoutImageFile"_1mm dim2`
-  dimez=`fslval "$ScoutImageFile"_1mm dim3`
-  padx=`echo "(256 - $dimex) / 2" | bc`
-  pady=`echo "(256 - $dimey) / 2" | bc`
-  padz=`echo "(256 - $dimez) / 2" | bc`
-  fslcreatehd $padx $dimey $dimez 1 1 1 1 1 0 0 0 16 "$ScoutImageFile"_1mm_padx
-  fslmerge -x "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padx "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padx
-  fslcreatehd 256 $pady $dimez 1 1 1 1 1 0 0 0 16 "$ScoutImageFile"_1mm_pady
-  fslmerge -y "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_pady "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_pady
-  fslcreatehd 256 256 $padz 1 1 1 1 1 0 0 0 16 "$ScoutImageFile"_1mm_padz
-  fslmerge -z "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padz "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padz
-  fslorient -setsformcode 1 "$ScoutImageFile"_1mm
-  fslorient -setsform -1 0 0 `echo "$originx + $padx" | bc -l` 0 1 0 `echo "$originy - $pady" | bc -l` 0 0 1 `echo "$originz - $padz" | bc -l` 0 0 0 1 "$ScoutImageFile"_1mm
-  rm "$ScoutImageFile"_1mm_padx.nii.gz "$ScoutImageFile"_1mm_pady.nii.gz "$ScoutImageFile"_1mm_padz.nii.gz
-
-  # Use "hidden" bbregister DOF options
-  log_Msg "Use \"hidden\" bbregister DOF options"
-  ${FREESURFER_HOME}/bin/bbregister --s "${FreeSurferSubjectID}_1mm" --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init_1mm.nii.gz --surf white.deformed --init-reg ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/eye.dat --bold --reg ${WD}/EPItoT1w.dat --${dof} --o ${WD}/${ScoutInputFile}_undistorted2T1w_1mm.nii.gz
-  tkregister2 --noedit --reg ${WD}/EPItoT1w.dat --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init_1mm.nii.gz --targ ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/T1w_hires.nii.gz --fslregout ${WD}/fMRI2str_1mm.mat
-  applywarp --interp=spline -i ${WD}/${ScoutInputFile}_undistorted2T1w_init_1mm.nii.gz -r ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/T1w_hires.nii.gz --premat=${WD}/fMRI2str_1mm.mat -o ${WD}/${ScoutInputFile}_undistorted2T1w_1mm.nii.gz
-
-  convert_xfm -omat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/temp.mat -concat ${WD}/fMRI2str_1mm.mat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/real2fs.mat
-  convert_xfm -omat ${WD}/fMRI2str.mat -concat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/fs2real.mat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/temp.mat
-  rm ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/temp.mat
-
 else
-  log_Msg "${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm does not exist. FreeSurferNHP.sh was not used."
-
-  # Run Normally
-  log_Msg "Run Normally" 
-  # Use "hidden" bbregister DOF options
-  log_Msg "Use \"hidden\" bbregister DOF options"
-  ${FREESURFER_HOME}/bin/bbregister --s ${FreeSurferSubjectID} --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz --surf white.deformed --init-reg ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}/mri/transforms/eye.dat --bold --reg ${WD}/EPItoT1w.dat --${dof} --o ${WD}/${ScoutInputFile}_undistorted2T1w.nii.gz
-  # Create FSL-style matrix and then combine with existing warp fields
-  log_Msg "Create FSL-style matrix and then combine with existing warp fields"
-  ${FREESURFER_HOME}/bin/tkregister2 --noedit --reg ${WD}/EPItoT1w.dat --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz --targ ${T1wImage}.nii.gz --fslregout ${WD}/fMRI2str.mat
+    log_Msg "do not apply Jacobian correction to scout image"
+    if [[ "$UseBiasField" != "" ]]
+    then
+        ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w_init -div ${UseBiasField} ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz
+    fi
+    #these all overwrite the input, no 'else' needed for "do nothing"
 fi
-${FSLDIR}/bin/convertwarp --relout --rel --warp1=${WD}/${ScoutInputFile}_undistorted_warp.nii.gz --ref=${T1wImage} --postmat=${WD}/fMRI2str.mat --out=${WD}/fMRI2str.nii.gz
+
+if [ "X${NoFreeSurfer}" = "X" ]; then
+	### FREESURFER BBR - found to be an improvement, probably due to better GM/WM boundary
+	SUBJECTS_DIR=${FreeSurferSubjectFolder}
+	export SUBJECTS_DIR
+	#Check to see if FreeSurferNHP.sh was used
+	log_Msg "Check to see if FreeSurferNHP.sh was used"
+	if [ -e ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm ] ; then
+	  #Perform Registration in FreeSurferNHP 1mm Space
+	  log_Msg "${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm exists. FreeSurferNHP.sh was used."
+	  log_Msg "Perform Registration in FreeSurferNHP 1mm Space"
+	  ScoutImage="${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz"
+	  ScoutImageFile="${WD}/${ScoutInputFile}_undistorted2T1w_init"
+
+	  res=`fslorient -getsform $ScoutImage | cut -d " " -f 1 | cut -d "-" -f 2`
+	  oldsform=`fslorient -getsform $ScoutImage`
+	  newsform=""
+	  i=1
+	  while [ $i -le 12 ] ; do
+		oldelement=`echo $oldsform | cut -d " " -f $i`
+		newelement=`echo "scale=1; $oldelement / $res" | bc -l`
+		newsform=`echo "$newsform""$newelement"" "`
+		if [ $i -eq 4 ] ; then
+		  originx="$newelement"
+		fi
+		if [ $i -eq 8 ] ; then
+		  originy="$newelement"
+		fi
+		if [ $i -eq 12 ] ; then
+		  originz="$newelement"
+		fi
+		i=$(($i+1))
+	  done
+	  newsform=`echo "$newsform""0 0 0 1" | sed 's/  / /g'`
+
+	  cp "$ScoutImage" "$ScoutImageFile"_1mm.nii.gz
+	  fslorient -setsform $newsform "$ScoutImageFile"_1mm.nii.gz
+	  fslhd -x "$ScoutImageFile"_1mm.nii.gz | sed s/"dx = '${res}'"/"dx = '1'"/g | sed s/"dy = '${res}'"/"dy = '1'"/g | sed s/"dz = '${res}'"/"dz = '1'"/g | fslcreatehd - "$ScoutImageFile"_1mm_head.nii.gz
+	  fslmaths "$ScoutImageFile"_1mm_head.nii.gz -add "$ScoutImageFile"_1mm.nii.gz "$ScoutImageFile"_1mm.nii.gz
+	  fslorient -copysform2qform "$ScoutImageFile"_1mm.nii.gz
+	  rm "$ScoutImageFile"_1mm_head.nii.gz
+	  dimex=`fslval "$ScoutImageFile"_1mm dim1`
+	  dimey=`fslval "$ScoutImageFile"_1mm dim2`
+	  dimez=`fslval "$ScoutImageFile"_1mm dim3`
+	  padx=`echo "(256 - $dimex) / 2" | bc`
+	  pady=`echo "(256 - $dimey) / 2" | bc`
+	  padz=`echo "(256 - $dimez) / 2" | bc`
+	  fslcreatehd $padx $dimey $dimez 1 1 1 1 1 0 0 0 16 "$ScoutImageFile"_1mm_padx
+	  fslmerge -x "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padx "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padx
+	  fslcreatehd 256 $pady $dimez 1 1 1 1 1 0 0 0 16 "$ScoutImageFile"_1mm_pady
+	  fslmerge -y "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_pady "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_pady
+	  fslcreatehd 256 256 $padz 1 1 1 1 1 0 0 0 16 "$ScoutImageFile"_1mm_padz
+	  fslmerge -z "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padz "$ScoutImageFile"_1mm "$ScoutImageFile"_1mm_padz
+	  fslorient -setsformcode 1 "$ScoutImageFile"_1mm
+	  fslorient -setsform -1 0 0 `echo "$originx + $padx" | bc -l` 0 1 0 `echo "$originy - $pady" | bc -l` 0 0 1 `echo "$originz - $padz" | bc -l` 0 0 0 1 "$ScoutImageFile"_1mm
+	  rm "$ScoutImageFile"_1mm_padx.nii.gz "$ScoutImageFile"_1mm_pady.nii.gz "$ScoutImageFile"_1mm_padz.nii.gz
+
+	  # Use "hidden" bbregister DOF options
+	  log_Msg "Use \"hidden\" bbregister DOF options"
+	  ${FREESURFER_HOME}/bin/bbregister --s "${FreeSurferSubjectID}_1mm" --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init_1mm.nii.gz --surf white.deformed --init-reg ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/eye.dat --bold --reg ${WD}/EPItoT1w.dat --${dof} --o ${WD}/${ScoutInputFile}_undistorted2T1w_1mm.nii.gz
+	  tkregister2 --noedit --reg ${WD}/EPItoT1w.dat --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init_1mm.nii.gz --targ ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/T1w_hires.nii.gz --fslregout ${WD}/fMRI2str_1mm.mat
+	  applywarp --interp=spline -i ${WD}/${ScoutInputFile}_undistorted2T1w_init_1mm.nii.gz -r ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/T1w_hires.nii.gz --premat=${WD}/fMRI2str_1mm.mat -o ${WD}/${ScoutInputFile}_undistorted2T1w_1mm.nii.gz
+
+	  convert_xfm -omat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/temp.mat -concat ${WD}/fMRI2str_1mm.mat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/real2fs.mat
+	  convert_xfm -omat ${WD}/fMRI2str_refinement.mat -concat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/fs2real.mat ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/temp.mat
+	  rm ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm/mri/transforms/temp.mat
+
+	else
+	  log_Msg "${FreeSurferSubjectFolder}/${FreeSurferSubjectID}_1mm does not exist. FreeSurferNHP.sh was not used."
+
+	  # Run Normally
+	  log_Msg "Run Normally" 
+	  # Use "hidden" bbregister DOF options
+	  log_Msg "Use \"hidden\" bbregister DOF options"
+	  ${FREESURFER_HOME}/bin/bbregister --s ${FreeSurferSubjectID} --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz --surf white.deformed --init-reg ${FreeSurferSubjectFolder}/${FreeSurferSubjectID}/mri/transforms/eye.dat --bold --reg ${WD}/EPItoT1w.dat --${dof} --o ${WD}/${ScoutInputFile}_undistorted2T1w.nii.gz
+	  # Create FSL-style matrix and then combine with existing warp fields
+	  log_Msg "Create FSL-style matrix and then combine with existing warp fields"
+	  ${FREESURFER_HOME}/bin/tkregister2 --noedit --reg ${WD}/EPItoT1w.dat --mov ${WD}/${ScoutInputFile}_undistorted2T1w_init.nii.gz --targ ${T1wImage}.nii.gz --fslregout ${WD}/fMRI2str_refinement.mat
+	fi
+else
+  log_Msg "SKIPPING FREESURFER BBR. --nofreesurfer option was given"
+  echo "1 0 0 0" > ${WD}/fMRI2str_refinement.mat
+  echo "0 1 0 0" >> ${WD}/fMRI2str_refinement.mat
+  echo "0 0 1 0" >> ${WD}/fMRI2str_refinement.mat
+  echo "0 0 0 1" >> ${WD}/fMRI2str_refinement.mat
+fi
+${FSLDIR}/bin/convertwarp --relout --rel --warp1=${WD}/${ScoutInputFile}_undistorted2T1w_init_warp.nii.gz --ref=${T1wImage} --postmat=${WD}/fMRI2str_refinement.mat --out=${WD}/fMRI2str.nii.gz
+
+#create final affine from undistorted fMRI space to T1w space, will need it if it making SEBASED bias field
+#overwrite old version of ${WD}/fMRI2str.mat, as it was just the initial registration
+#${WD}/${ScoutInputFile}_undistorted_initT1wReg.mat is from the above epi_reg_dof, initial registration from fMRI space to T1 space
+${FSLDIR}/bin/convert_xfm -omat ${WD}/fMRI2str.mat -concat ${WD}/fMRI2str_refinement.mat ${WD}/${ScoutInputFile}_undistorted2T1w_init.mat
+
+if [[ $DistortionCorrection == $SPIN_ECHO_METHOD_OPT ]]
+then
+    #resample SE field maps, so we can copy to results directories
+    #the MNI space versions get made in OneStepResampling, but they aren't actually 1-step resampled
+    #we need them before the final bias field computation
+    Files="PhaseOne_gdc_dc PhaseTwo_gdc_dc SBRef_dc"
+    for File in ${Files}
+    do
+        if [[ $UseJacobian == "true" ]]
+        then
+            ${FSLDIR}/bin/applywarp --interp=spline -i "${WD}/FieldMap/${File}_jac" -r ${SubjectFolder}/T1w/T2w_acpc_dc.nii.gz --premat=${WD}/fMRI2str.mat -o ${WD}/${File}
+        else
+            ${FSLDIR}/bin/applywarp --interp=spline -i "${WD}/FieldMap/${File}" -r ${SubjectFolder}/T1w/T2w_acpc_dc.nii.gz --premat=${WD}/fMRI2str.mat -o ${WD}/${File}
+        fi
+    done
+        
+    if [[ $BiasCorrection == "SEBASED" ]]
+    then
+        #final bias field computation
+        
+        #run bias field computation script, go ahead and reuse the same working dir as previous run
+        "${HCPPIPEDIR_fMRIVol}/ComputeSpinEchoBiasField.sh" \
+            --workingdir="$WD/ComputeSpinEchoBiasField" \
+            --subjectfolder="$SubjectFolder" \
+            --fmriname="$NameOffMRI" \
+            --corticallut="$HCPPIPEDIR/global/config/FreeSurferCorticalLabelTableLut.txt" \
+            --subcorticallut="$HCPPIPEDIR/global/config/FreeSurferSubcorticalLabelTableLut.txt" \
+            --smoothingfwhm="2" \
+            --inputdir="$WD"
+        
+        #don't need to do anything more with scout, it is 1-step resampled and bias correction, jacobians reapplied
+        Files="PhaseOne_gdc_dc PhaseTwo_gdc_dc"
+        for File in ${Files}
+        do
+            #we need to apply the new bias field to them for output
+            ${FSLDIR}/bin/fslmaths ${WD}/${File} -div "$UseBiasField" ${WD}/${File}_unbias
+            
+            #don't need the T1w versions
+            #${FSLDIR}/bin/imcp ${WD}/${File}_unbias ${SubjectFolder}/T1w/Results/${NameOffMRI}/${NameOffMRI}_${File}
+        done
+        
+        #copy bias field and dropouts, etc to results dir
+        ${FSLDIR}/bin/imcp "$WD/ComputeSpinEchoBiasField/${NameOffMRI}_dropouts" "$SubjectFolder/T1w/Results/$NameOffMRI/${NameOffMRI}_dropouts"
+        ${FSLDIR}/bin/imcp "$WD/ComputeSpinEchoBiasField/${NameOffMRI}_sebased_bias" "$SubjectFolder/T1w/Results/$NameOffMRI/${NameOffMRI}_sebased_bias"
+        ${FSLDIR}/bin/imcp "$WD/ComputeSpinEchoBiasField/${NameOffMRI}_sebased_reference" "$SubjectFolder/T1w/Results/$NameOffMRI/${NameOffMRI}_sebased_reference"
+        
+        #make MNI space outputs
+        #we don't have MNI final fMRI reference space yet, can't do this here
+        #${FSLDIR}/bin/applywarp --interp=trilinear -i ${WD}/ComputeSpinEchoBiasField/sebased_bias_dil.nii.gz -r ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_SBRef.nii.gz -w ${SubjectFolder}/MNINonLinear/xfms/acpc_dc2standard.nii.gz -o ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_sebased_bias.nii.gz
+        #${FSLDIR}/bin/fslmaths ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_sebased_bias.nii.gz -mas ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_SBRef.nii.gz ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_sebased_bias.nii.gz
+        
+        #${FSLDIR}/bin/applywarp --interp=trilinear -i ${WD}/ComputeSpinEchoBiasField/sebased_reference_dil.nii.gz -r ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_SBRef.nii.gz -w ${SubjectFolder}/MNINonLinear/xfms/acpc_dc2standard.nii.gz -o ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_sebased_reference.nii.gz
+        #${FSLDIR}/bin/fslmaths ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_sebased_reference.nii.gz -mas ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_SBRef.nii.gz ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_sebased_reference.nii.gz
+        
+        #${FSLDIR}/bin/applywarp --interp=trilinear -i ${WD}/ComputeSpinEchoBiasField/${NameOffMRI}_dropouts.nii.gz -r ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_SBRef.nii.gz -w ${SubjectFolder}/MNINonLinear/xfms/acpc_dc2standard.nii.gz -o ${SubjectFolder}/MNINonLinear/Results/${NameOffMRI}/${NameOffMRI}_dropouts.nii.gz
+        
+    else
+        #don't need to do anything more with scout, it is 1-step resampled and bias correction, jacobians reapplied
+        Files="PhaseOne_gdc_dc PhaseTwo_gdc_dc"
+        for File in ${Files}
+        do
+            if [[ $UseBiasField ]]
+            then
+                #we need to apply the bias field to them for output (really only the phase images, but whatever)
+                ${FSLDIR}/bin/fslmaths ${WD}/${File} -div "$UseBiasField" ${WD}/${File}_unbias
+            else
+                ${FSLDIR}/bin/imcp ${WD}/${File} ${WD}/${File}_unbias
+            fi
+            #don't need the T1w versions
+            #${FSLDIR}/bin/imcp ${WD}/${File}_unbias ${SubjectFolder}/T1w/Results/${NameOffMRI}/${NameOffMRI}_${File}
+        done
+    fi
+fi
+
 # Create warped image with spline interpolation, bias correction and (optional) Jacobian modulation
+# NOTE: Jacobian2T1w should be only the topup or fieldmap warpfield's jacobian, not including the gdc warp
+# the input scout is the gdc scout, which should already have had the gdc jacobian applied by the main script
 log_Msg "Create warped image with spline interpolation, bias correction and (optional) Jacobian modulation"
 ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${ScoutInputName} -r ${T1wImage}.nii.gz -w ${WD}/fMRI2str.nii.gz -o ${WD}/${ScoutInputFile}_undistorted2T1w
-if [ $UseJacobian = true ] ; then
+
+# resample fieldmap jacobian with new registration
+${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/Jacobian.nii.gz -r ${T1wImage} --premat=${WD}/fMRI2str.mat -o ${WD}/Jacobian2T1w.nii.gz
+
+if [[ $UseJacobian == "true" ]]
+then
     log_Msg "applying Jacobian modulation"
-    ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w -div ${BiasField} -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w
+    if [[ "$UseBiasField" != "" ]]
+    then
+        ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w -div ${UseBiasField} -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w
+    else
+        ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w -mul ${WD}/Jacobian2T1w.nii.gz ${WD}/${ScoutInputFile}_undistorted2T1w
+    fi
 else
     log_Msg "not applying Jacobian modulation"
-    ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w -div ${BiasField} ${WD}/${ScoutInputFile}_undistorted2T1w
+    if [[ "$UseBiasField" != "" ]]
+    then
+        ${FSLDIR}/bin/fslmaths ${WD}/${ScoutInputFile}_undistorted2T1w -div ${UseBiasField} ${WD}/${ScoutInputFile}_undistorted2T1w
+    fi
+    #no else, the commands are overwriting their input
 fi
 
 log_Msg "cp ${WD}/${ScoutInputFile}_undistorted2T1w.nii.gz ${RegOutput}.nii.gz"
@@ -476,7 +747,7 @@ log_Msg "cp ${WD}/Jacobian2T1w.nii.gz ${JacobianOut}.nii.gz"
 cp ${WD}/Jacobian2T1w.nii.gz ${JacobianOut}.nii.gz
 
 # QA image (sqrt of EPI * T1w)
-log_Msg "generating QA image (sqrt of EPI * T1w)"
+log_Msg 'generating QA image (sqrt of EPI * T1w)'
 ${FSLDIR}/bin/fslmaths ${T1wRestoreImage}.nii.gz -mul ${RegOutput}.nii.gz -sqrt ${QAImage}.nii.gz
 
 log_Msg "END"

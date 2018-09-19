@@ -34,7 +34,7 @@ show_usage() {
 # --------------------------------------------------------------------------------
 #   Establish tool name for logging
 # --------------------------------------------------------------------------------
-log_SetToolName "GenericfMRISurfaceProcessingPipeline.sh"
+log_SetToolName "GenericfMRISurfaceProcessingPipeline_1res.sh"
 
 ################################################## OPTION PARSING #####################################################
 
@@ -55,6 +55,7 @@ FinalfMRIResolution=`opts_GetOpt1 "--fmrires" $@`  # "${14}"
 SmoothingFWHM=`opts_GetOpt1 "--smoothingFWHM" $@`  # "${14}"
 GrayordinatesResolution=`opts_GetOpt1 "--grayordinatesres" $@`  # "${14}"
 RegName=`opts_GetOpt1 "--regname" $@`
+FinalSpace=`opts_GetOpt1 "--finalspace" $@`
 
 if [ "${RegName}" = "" ]; then
     RegName="FS"
@@ -83,6 +84,10 @@ ResultsFolder="Results"
 DownSampleFolder="fsaverage_LR${LowResMesh}k"
 ROIFolder="ROIs"
 OutputAtlasDenseTimeseries="${NameOffMRI}_Atlas.${LowResMesh}k"
+
+if [ "${FinalSpace}" = "Native" ]; then
+    AtlasSpaceFolder=${T1wFolder}
+fi
 
 AtlasSpaceFolder="$Path"/"$Subject"/"$AtlasSpaceFolder"
 T1wFolder="$Path"/"$Subject"/"$T1wFolder"

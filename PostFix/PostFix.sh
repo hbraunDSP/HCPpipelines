@@ -134,6 +134,7 @@ get_options()
 	unset g_path_to_study_folder
 	unset g_subject
 	unset g_fmri_name
+	unset g_fmri_suffix
 	unset g_high_pass
 	unset g_template_scene_dual_screen
 	unset g_template_scene_single_screen
@@ -165,6 +166,10 @@ get_options()
 				;;
 			--fmri-name=*)
 				g_fmri_name=${argument/*=/""}
+				index=$(( index + 1 ))
+				;;
+			--fmri-suffix=*)
+				g_fmri_suffix=${argument/*=/""}
 				index=$(( index + 1 ))
 				;;
 			--high-pass=*)
@@ -259,10 +264,10 @@ main()
 	ResultsFolder="${AtlasFolder}/Results/${g_fmri_name}"
 	log_Msg "ResultsFolder: ${ResultsFolder}"
 
-	ICAFolder="${ResultsFolder}/${g_fmri_name}_hp${g_high_pass}.ica/filtered_func_data.ica"
+	ICAFolder="${ResultsFolder}/${g_fmri_name}${g_fmri_suffix}_hp${g_high_pass}.ica/filtered_func_data.ica"
 	log_Msg "ICAFolder: ${ICAFolder}"
 
-	FIXFolder="${ResultsFolder}/${g_fmri_name}_hp${g_high_pass}.ica"
+	FIXFolder="${ResultsFolder}/${g_fmri_name}${g_fmri_suffix}_hp${g_high_pass}.ica"
 	log_Msg "FIXFolder: ${FIXFolder}"
 
 	# --------------------------------------------------------------------------------
@@ -290,7 +295,7 @@ main()
 	log_Msg "Set up for prepareICAs Matlab code"
 	# --------------------------------------------------------------------------------
 
-	dtseriesName="${ResultsFolder}/${g_fmri_name}_Atlas" #No Extension Here	
+	dtseriesName="${ResultsFolder}/${g_fmri_name}${g_fmri_suffix}_Atlas" #No Extension Here	
 	log_Msg "dtseriesName: ${dtseriesName}"
 
 	ICAs="${ICAFolder}/melodic_mix"
@@ -311,10 +316,10 @@ main()
 	ComponentList="${FIXFolder}/ComponentList.txt"
 	log_Msg "ComponentList: ${ComponentList}"
 
-	TR=`${FSLDIR}/bin/fslval ${ResultsFolder}/${g_fmri_name}_hp2000_clean pixdim4`
+	TR=`${FSLDIR}/bin/fslval ${ResultsFolder}/${g_fmri_name}${g_fmri_suffix}_hp2000_clean pixdim4`
 	log_Msg "TR: ${TR}"
 
-	NumTimePoints=`${FSLDIR}/bin/fslval ${ResultsFolder}/${g_fmri_name}_hp2000_clean dim4`
+	NumTimePoints=`${FSLDIR}/bin/fslval ${ResultsFolder}/${g_fmri_name}${g_fmri_suffix}_hp2000_clean dim4`
 	log_Msg "NumTimePoints: ${NumTimePoints}"
 
 	if [ -e ${ComponentList} ] ; then
@@ -326,7 +331,9 @@ main()
 	matlab_exe+="/PostFix/Compiled_prepareICAs/distrib/run_prepareICAs.sh"
 
 	# TBD: Use environment variable instead of fixed path?
-	matlab_compiler_runtime="/export/matlab/R2013a/MCR"
+	#matlab_compiler_runtime="/export/matlab/R2013a/MCR"
+	#matlab_compiler_runtime=${HCP_MATLAB_PATH}
+	matlab_exe=${HCP_MATLAB_PATH}/bin/matlab
 
 	matlab_function_arguments="'${dtseriesName}' '${ICAs}' '${CARET7DIR}/wb_command' '${ICAdtseries}' '${NoiseICAs}' '${Noise}' "
 	matlab_function_arguments+="'${Signal}' '${ComponentList}' ${g_high_pass} ${TR} "
@@ -335,6 +342,9 @@ main()
 
 	matlab_cmd="${matlab_exe} ${matlab_compiler_runtime} ${matlab_function_arguments} ${matlab_logging}"
 
+	matlab_cmd="${matlab_exe} -nodesktop -nosplash -r \"addpath('${HCPPIPEDIR}/global/matlab'); cd('${HCPPIPEDIR}/PostFix'); "`printf "prepareICAs(%s,%s,%s,%s,%s,%s,%s,%s,%f,%f)" ${matlab_function_arguments}`"\""
+	
+	
 	# --------------------------------------------------------------------------------
 	log_Msg "Run matlab command: ${matlab_cmd}"
 	# --------------------------------------------------------------------------------
@@ -366,12 +376,12 @@ main()
 	# --------------------------------------------------------------------------------
 	log_Msg "Making dual screen scene"
 	# --------------------------------------------------------------------------------
-	cat ${g_template_scene_dual_screen} | sed s/SubjectID/${g_subject}/g | sed s/fMRIName/${g_fmri_name}/g | sed s@StudyFolder@"../../../.."@g > ${ResultsFolder}/${g_subject}_${g_fmri_name}_ICA_Classification_dualscreen.scene
+	cat ${g_template_scene_dual_screen} | sed s/SubjectID/${g_subject}/g | sed s/fMRIName_/${g_fmri_name}${g_fmri_suffix}_/g | sed s/fMRIName/${g_fmri_name}/g | sed s@StudyFolder@"../../../.."@g > ${ResultsFolder}/${g_subject}_${g_fmri_name}${g_fmri_suffix}_ICA_Classification_dualscreen.scene
 
 	# --------------------------------------------------------------------------------
 	log_Msg "Making single screen scene"
 	# --------------------------------------------------------------------------------
-	cat ${g_template_scene_single_screen} | sed s/SubjectID/${g_subject}/g | sed s/fMRIName/${g_fmri_name}/g | sed s@StudyFolder@"../../../.."@g > ${ResultsFolder}/${g_subject}_${g_fmri_name}_ICA_Classification_singlescreen.scene
+	cat ${g_template_scene_single_screen} | sed s/SubjectID/${g_subject}/g | sed s/fMRIName_/${g_fmri_name}${g_fmri_suffix}_/g | sed s/fMRIName/${g_fmri_name}/g | sed s@StudyFolder@"../../../.."@g > ${ResultsFolder}/${g_subject}_${g_fmri_name}${g_fmri_suffix}_ICA_Classification_singlescreen.scene
 
 	if [ ! -e ${ResultsFolder}/ReclassifyAsSignal.txt ] ; then
 		touch ${ResultsFolder}/ReclassifyAsSignal.txt

@@ -3,7 +3,8 @@ TemplateFolder="${GitRepo}/global/templates/standard_mesh_atlases"
 NumberOfVertices="5000"
 OriginalMesh="164"
 NewMesh="5"
-NewResolution="1.05"
+#NewResolution="1.05"
+NewResolution=3.00
 Caret7_Command="wb_command"
 SubcorticalLabelTable="${GitRepo}/global/config/FreeSurferSubcorticalLabelTableLut.txt"
 

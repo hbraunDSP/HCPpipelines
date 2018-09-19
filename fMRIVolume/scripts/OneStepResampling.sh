@@ -29,7 +29,6 @@ Usage() {
   echo "             --scoutin=<input scout image (EPI pre-sat, before gradient non-linearity distortion correction)>"
   echo "             --scoutgdcin=<input scout gradient nonlinearity distortion corrected image (EPI pre-sat)>"
   echo "             --oscout=<output transformed + distortion corrected scout image>"
-  echo "             --jacobianin=<input Jacobian image>"
   echo "             --ojacobian=<output transformed + distortion corrected Jacobian image>"
 }
 
@@ -91,8 +90,8 @@ GradientDistortionField=`getopt1 "--gdfield" $@`  # "${14}"
 ScoutInput=`getopt1 "--scoutin" $@`  # "${15}"
 ScoutInputgdc=`getopt1 "--scoutgdcin" $@`  # "${15}"
 ScoutOutput=`getopt1 "--oscout" $@`  # "${16}"
-JacobianIn=`getopt1 "--jacobianin" $@`  # "${17}"
 JacobianOut=`getopt1 "--ojacobian" $@`  # "${18}"
+ResampRefIm=`getopt1 "--ref" $@`  # "${18}"
 
 BiasFieldFile=`basename "$BiasField"`
 T1wImageFile=`basename $T1wImage`
@@ -135,14 +134,30 @@ NumFrames=`${FSLDIR}/bin/fslval ${InputfMRI} dim4`
 #   NB: don't use FLIRT to do spline interpolation with -applyisoxfm for the 
 #       2mm and 1mm cases because it doesn't know the peculiarities of the 
 #       MNI template FOVs
-if [ ${FinalfMRIResolution} = "2" ] ; then
-    ResampRefIm=$FSLDIR/data/standard/MNI152_T1_2mm
-elif [ ${FinalfMRIResolution} = "1" ] ; then
-    ResampRefIm=$FSLDIR/data/standard/MNI152_T1_1mm
-else
-  ${FSLDIR}/bin/flirt -interp spline -in ${T1wImage} -ref ${T1wImage} -applyisoxfm $FinalfMRIResolution -out ${WD}/${T1wImageFile}.${FinalfMRIResolution}
-  ResampRefIm=${WD}/${T1wImageFile}.${FinalfMRIResolution} 
+if [ "X${ResampRefIm}" = "X" ] || [ `imtest $ResampRefIm` = 0 ]; then
+	if [ ${FinalfMRIResolution} = "2" ] ; then
+		ResampRefIm=$FSLDIR/data/standard/MNI152_T1_2mm
+	elif [ ${FinalfMRIResolution} = "1" ] ; then
+		ResampRefIm=$FSLDIR/data/standard/MNI152_T1_1mm
+	else
+		ResampRefIm=
+		for i in `ls ${HCPPIPEDIR_Templates}/*_T1_*_brain_mask.nii.gz`; 
+		do 
+			refres=`${FSLDIR}/bin/fslval $i pixdim1`; 
+			restol=0.001
+			sameres=`echo "a=(${FinalfMRIResolution} - ${refres}); if(a<0)a*=-1; if(a<=${restol})1" | bc -l`
+			if [[ $sameres == 1 ]]; then
+				ResampRefIm=`echo $i | sed 's/_brain_mask.nii.gz//'`
+				break
+			fi
+		done
+		if [ "X${ResampRefIm}" = "X" ] || [ `imtest $ResampRefIm` = 0 ]; then
+			${FSLDIR}/bin/flirt -interp spline -in ${T1wImage} -ref ${T1wImage} -applyisoxfm $FinalfMRIResolution -out ${WD}/${T1wImageFile}.${FinalfMRIResolution}
+			ResampRefIm=${WD}/${T1wImageFile}.${FinalfMRIResolution} 
+		fi
+	fi
 fi
+
 ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${T1wImage} -r ${ResampRefIm} --premat=$FSLDIR/etc/flirtsch/ident.mat -o ${WD}/${T1wImageFile}.${FinalfMRIResolution}
 
 # Create brain masks in this space from the FreeSurfer output (changing resolution)
@@ -151,6 +166,7 @@ ${FSLDIR}/bin/applywarp --rel --interp=nn -i ${FreeSurferBrainMask}.nii.gz -r ${
 # Create versions of the biasfield (changing resolution)
 ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${BiasField} -r ${WD}/${FreeSurferBrainMaskFile}.${FinalfMRIResolution}.nii.gz --premat=$FSLDIR/etc/flirtsch/ident.mat -o ${WD}/${BiasFieldFile}.${FinalfMRIResolution}
 ${FSLDIR}/bin/fslmaths ${WD}/${BiasFieldFile}.${FinalfMRIResolution} -thr 0.1 ${WD}/${BiasFieldFile}.${FinalfMRIResolution}
+
 
 # Downsample warpfield (fMRI to standard) to increase speed 
 #   NB: warpfield resolution is 10mm, so 1mm to fMRIres downsample loses no precision
@@ -161,6 +177,8 @@ else
 	warp2="--warp2=${StructuralToStandard}"
 fi
 ${FSLDIR}/bin/convertwarp --relout --rel --warp1=${fMRIToStructuralInput} ${warp2} --ref=${WD}/${T1wImageFile}.${FinalfMRIResolution} --out=${OutputTransform}
+
+
 
 ###Add stuff for RMS###
 invwarp -w ${OutputTransform} -o ${OutputInvTransform} -r ${ScoutInputgdc}
@@ -225,7 +243,18 @@ if [ "x${StructuralToStandard}" = x ]; then
 	#if no struct2std given, just resample jacobian
 	flirt -interp spline -applyisoxfm ${FinalfMRIResolution} -in ${JacobianIn} -ref ${WD}/${T1wImageFile}.${FinalfMRIResolution} -out ${JacobianOut}
 else
-	${FSLDIR}/bin/applywarp --rel --interp=spline -i ${JacobianIn} -r ${WD}/${T1wImageFile}.${FinalfMRIResolution} -w ${StructuralToStandard} -o ${JacobianOut}
+	#${FSLDIR}/bin/applywarp --rel --interp=spline -i ${JacobianIn} -r ${WD}/${T1wImageFile}.${FinalfMRIResolution} -w ${StructuralToStandard} -o ${JacobianOut}
+	#fMRIToStructuralInput is from gdc space to T1w space, ie, only fieldmap-based distortions (like topup)
+	#output jacobian is both gdc and topup/fieldmap jacobian, but not the to MNI jacobian
+	#JacobianIn was removed from inputs, now we just compute it from the combined warpfield of gdc and dc (NOT MNI)
+	#compute combined warpfield, but don't use jacobian output because it has 8 frames for no apparent reason
+	#NOTE: convertwarp always requires -o anyway
+	${FSLDIR}/bin/convertwarp --relout --rel --ref=${fMRIToStructuralInput} --warp1=${GradientDistortionField} --warp2=${fMRIToStructuralInput} -o ${WD}/gdc_dc_warp --jacobian=${WD}/gdc_dc_jacobian
+	#but, convertwarp's jacobian is 8 frames - each combination of one-sided differences, so average them
+	${FSLDIR}/bin/fslmaths ${WD}/gdc_dc_jacobian -Tmean ${WD}/gdc_dc_jacobian
+
+	#and resample it to MNI space
+	${FSLDIR}/bin/applywarp --rel --interp=spline -i ${WD}/gdc_dc_jacobian -r ${WD}/${T1wImageFile}.${FinalfMRIResolution} -w ${StructuralToStandard} -o ${JacobianOut}
 fi
 
 

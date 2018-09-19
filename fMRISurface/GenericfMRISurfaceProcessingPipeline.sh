@@ -55,10 +55,17 @@ FinalfMRIResolution=`opts_GetOpt1 "--fmrires" $@`  # "${14}"
 SmoothingFWHM=`opts_GetOpt1 "--smoothingFWHM" $@`  # "${14}"
 GrayordinatesResolution=`opts_GetOpt1 "--grayordinatesres" $@`  # "${14}"
 RegName=`opts_GetOpt1 "--regname" $@`
+FinalSpace=`opts_GetOpt1 "--finalspace" $@`
+FMRISuffix=`opts_GetOpt1 "--fmrisuffix" $@`
+ForceGenericResampling=`opts_GetOpt1 "--forcegeneric" $@`
+UseMappingSuffix=`opts_GetOpt1 "--usemappingsuffix" $@`
+ForceUpsample=`opts_GetOpt1 "--upsample" $@`
+UnmaskedInput=`opts_GetOpt1 "--unmasked" $@`
 
 if [ "${RegName}" = "" ]; then
     RegName="FS"
 fi
+NameOffMRI_withsuffix="${NameOffMRI}${FMRISuffix}"
 
 RUN=`opts_GetOpt1 "--printcom" $@`  # use ="echo" for just printing everything and not running the commands (default is to run)
 
@@ -70,6 +77,7 @@ log_Msg "FinalfMRIResolution: ${FinalfMRIResolution}"
 log_Msg "SmoothingFWHM: ${SmoothingFWHM}"
 log_Msg "GrayordinatesResolution: ${GrayordinatesResolution}"
 log_Msg "RegName: ${RegName}"
+log_Msg "FMRISuffix: ${FMRISuffix}"
 log_Msg "RUN: ${RUN}"
 
 # Setup PATHS
@@ -82,7 +90,11 @@ NativeFolder="Native"
 ResultsFolder="Results"
 DownSampleFolder="fsaverage_LR${LowResMesh}k"
 ROIFolder="ROIs"
-OutputAtlasDenseTimeseries="${NameOffMRI}_Atlas"
+OutputAtlasDenseTimeseries="${NameOffMRI_withsuffix}_Atlas"
+
+if [ "${FinalSpace}" = "Native" ]; then
+    AtlasSpaceFolder=${T1wFolder}
+fi
 
 AtlasSpaceFolder="$Path"/"$Subject"/"$AtlasSpaceFolder"
 T1wFolder="$Path"/"$Subject"/"$T1wFolder"
@@ -93,21 +105,40 @@ ROIFolder="$AtlasSpaceFolder"/"$ROIFolder"
 #Noisy Voxel Outlier Exclusion
 #Ribbon-based Volume to Surface mapping and resampling to standard surface
 
+if [ `imtest "$ResultsFolder"/"${NameOffMRI_withsuffix}_SBRef"` = 0 ]; then
+	imln "$ResultsFolder"/"${NameOffMRI}_SBRef" "$ResultsFolder"/"${NameOffMRI_withsuffix}_SBRef" 
+fi
+
+wdir="$ResultsFolder"/RibbonVolumeToSurfaceMapping${FMRISuffix}
+
 log_Msg "Make fMRI Ribbon"
-log_Msg "mkdir -p ${ResultsFolder}/RibbonVolumeToSurfaceMapping"
-mkdir -p "$ResultsFolder"/RibbonVolumeToSurfaceMapping
-"$PipelineScripts"/RibbonVolumeToSurfaceMapping.sh "$ResultsFolder"/RibbonVolumeToSurfaceMapping "$ResultsFolder"/"$NameOffMRI" "$Subject" "$AtlasSpaceFolder"/"$DownSampleFolder" "$LowResMesh" "$AtlasSpaceFolder"/"$NativeFolder" "${RegName}"
+log_Msg "mkdir -p ${wdir}"
+mkdir -p ${wdir}
+
+if [ "X$UseMappingSuffix" = "X" ]; then
+	"$PipelineScripts"/RibbonVolumeToSurfaceMapping.sh ${wdir} "$ResultsFolder"/"${NameOffMRI_withsuffix}" "$Subject" "$AtlasSpaceFolder"/"$DownSampleFolder" "$LowResMesh" "$AtlasSpaceFolder"/"$NativeFolder" "${RegName}"
+else
+	UseMappingSuffix=`echo $UseMappingSuffix | awk -F: '{print $2}'`
+	MappingTCS="$ResultsFolder"/"${NameOffMRI}${UseMappingSuffix}"
+	log_Msg "Using alternate fMRI series for goodvoxels.nii.gz mask: ${MappingTCS}"
+	"$PipelineScripts"/RibbonVolumeToSurfaceMapping_goodvox.sh ${wdir} "${MappingTCS}" "$Subject" "$AtlasSpaceFolder"/"$DownSampleFolder" "$LowResMesh" "$AtlasSpaceFolder"/"$NativeFolder" "${RegName}"
+	"$PipelineScripts"/RibbonVolumeToSurfaceMapping_usemap.sh ${wdir} "$ResultsFolder"/"${NameOffMRI_withsuffix}" "$Subject" "$AtlasSpaceFolder"/"$DownSampleFolder" "$LowResMesh" "$AtlasSpaceFolder"/"$NativeFolder" "${RegName}"
+fi
 
 #Surface Smoothing
 log_Msg "Surface Smoothing"
-"$PipelineScripts"/SurfaceSmoothing.sh "$ResultsFolder"/"$NameOffMRI" "$Subject" "$AtlasSpaceFolder"/"$DownSampleFolder" "$LowResMesh" "$SmoothingFWHM"
+"$PipelineScripts"/SurfaceSmoothing.sh "$ResultsFolder"/"${NameOffMRI_withsuffix}" "$Subject" "$AtlasSpaceFolder"/"$DownSampleFolder" "$LowResMesh" "$SmoothingFWHM"
 
 #Subcortical Processing
 log_Msg "Subcortical Processing"
-"$PipelineScripts"/SubcorticalProcessing.sh "$AtlasSpaceFolder" "$ROIFolder" "$FinalfMRIResolution" "$ResultsFolder" "$NameOffMRI" "$SmoothingFWHM" "$GrayordinatesResolution"
+if [ "X$ForceUpsample" = "X" ]; then
+	"$PipelineScripts"/SubcorticalProcessing.sh "$AtlasSpaceFolder" "$ROIFolder" "$FinalfMRIResolution" "$ResultsFolder" "${NameOffMRI_withsuffix}" "$SmoothingFWHM" "$GrayordinatesResolution" "$ForceGenericResampling"
+else
+	"$PipelineScripts"/SubcorticalProcessing_upsample.sh "$AtlasSpaceFolder" "$ROIFolder" "$FinalfMRIResolution" "$ResultsFolder" "${NameOffMRI_withsuffix}" "$SmoothingFWHM" "$GrayordinatesResolution" "$ForceGenericResampling" "$UnmaskedInput"
+fi
 
 #Generation of Dense Timeseries
 log_Msg "Generation of Dense Timeseries"
-"$PipelineScripts"/CreateDenseTimeseries.sh "$AtlasSpaceFolder"/"$DownSampleFolder" "$Subject" "$LowResMesh" "$ResultsFolder"/"$NameOffMRI" "$SmoothingFWHM" "$ROIFolder" "$ResultsFolder"/"$OutputAtlasDenseTimeseries" "$GrayordinatesResolution"
+"$PipelineScripts"/CreateDenseTimeseries.sh "$AtlasSpaceFolder"/"$DownSampleFolder" "$Subject" "$LowResMesh" "$ResultsFolder"/"${NameOffMRI_withsuffix}" "$SmoothingFWHM" "$ROIFolder" "$ResultsFolder"/"$OutputAtlasDenseTimeseries" "$GrayordinatesResolution"
 
 log_Msg "Completed"

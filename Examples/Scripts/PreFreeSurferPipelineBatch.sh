@@ -41,7 +41,7 @@ get_batch_options $@
 
 StudyFolder="${HOME}/projects/Pipelines_ExampleData" #Location of Subject folders (named by subjectID)
 Subjlist="100307" #Space delimited list of subject IDs
-EnvironmentScript="${HOME}/projects/Pipelines/Examples/Scripts/SetUpHCPPipeline.sh" #Pipeline environment script
+EnvironmentScript="${HOME}/source/Pipelines/Examples/Scripts/SetUpHCPPipeline.sh" #Pipeline environment script
 
 if [ -n "${command_line_specified_study_folder}" ]; then
     StudyFolder="${command_line_specified_study_folder}"
@@ -297,6 +297,38 @@ for Subject in $Subjlist ; do
       echo "About to use fsl_sub to queue or run ${HCPPIPEDIR}/PreFreeSurfer/PreFreeSurferPipeline.sh"
       queuing_command="${FSLDIR}/bin/fsl_sub ${QUEUE}"
   fi
+
+#print command before running
+echo ${queuing_command} ${HCPPIPEDIR}/PreFreeSurfer/PreFreeSurferPipeline.sh \
+      --path="$StudyFolder" \
+      --subject="$Subject" \
+      --t1="$T1wInputImages" \
+      --t2="$T2wInputImages" \
+      --t1template="$T1wTemplate" \
+      --t1templatebrain="$T1wTemplateBrain" \
+      --t1template2mm="$T1wTemplate2mm" \
+      --t2template="$T2wTemplate" \
+      --t2templatebrain="$T2wTemplateBrain" \
+      --t2template2mm="$T2wTemplate2mm" \
+      --templatemask="$TemplateMask" \
+      --template2mmmask="$Template2mmMask" \
+      --brainsize="$BrainSize" \
+      --fnirtconfig="$FNIRTConfig" \
+      --fmapmag="$MagnitudeInputName" \
+      --fmapphase="$PhaseInputName" \
+      --fmapgeneralelectric="$GEB0InputName" \
+      --echodiff="$TE" \
+      --SEPhaseNeg="$SpinEchoPhaseEncodeNegative" \
+      --SEPhasePos="$SpinEchoPhaseEncodePositive" \
+      --echospacing="$DwellTime" \
+      --seunwarpdir="$SEUnwarpDir" \
+      --t1samplespacing="$T1wSampleSpacing" \
+      --t2samplespacing="$T2wSampleSpacing" \
+      --unwarpdir="$UnwarpDir" \
+      --gdcoeffs="$GradientDistortionCoeffs" \
+      --avgrdcmethod="$AvgrdcSTRING" \
+      --topupconfig="$TopupConfig" \
+      --printcom=$PRINTCOM
 
   ${queuing_command} ${HCPPIPEDIR}/PreFreeSurfer/PreFreeSurferPipeline.sh \
       --path="$StudyFolder" \
