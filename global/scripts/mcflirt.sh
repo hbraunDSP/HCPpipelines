@@ -93,11 +93,11 @@ for i in `ls ${output}.mat/*` ; do
     mmz=`echo $mm | cut -d " " -f 3`
     radians=`${FSLDIR}/bin/avscale --allparams ${output}/${ii}.mat $mcref | grep "Rotation Angles" | awk '{print $6 " " $7 " " $8}'`
     radx=`echo $radians | cut -d " " -f 1`
-    degx=`echo "$radx * (180 / $pi)" | bc -l`
+    degx=`echo "$radx * (180 / $pi)" | sed 's/[eE]+\?/*10^/g' | bc -l`
     rady=`echo $radians | cut -d " " -f 2`
-    degy=`echo "$rady * (180 / $pi)" | bc -l`
+    degy=`echo "$rady * (180 / $pi)" | sed 's/[eE]+\?/*10^/g' | bc -l`
     radz=`echo $radians | cut -d " " -f 3`
-    degz=`echo "$radz * (180 / $pi)" | bc -l`
+    degz=`echo "$radz * (180 / $pi)" | sed 's/[eE]+\?/*10^/g' | bc -l`
     # The "%.6f" formatting specifier allows the numeric value to be as wide as it needs to be to accomodate the number
     # Then we mandate (include) a single space as a delimiter between values.
     echo `printf "%.6f" $mmx` `printf "%.6f" $mmy` `printf "%.6f" $mmz` `printf "%.6f" $degx` `printf "%.6f" $degy` `printf "%.6f" $degz` >> ${output}/mc.par
@@ -109,7 +109,7 @@ ${FSLDIR}/bin/fslmerge -t ${output}_mask `${FSLDIR}/bin/imglob ${output}_mask???
 ${FSLDIR}/bin/fslmaths ${output}_mask -Tmean -mul `$FSLDIR/bin/fslval ${output}_mask dim4` ${output}_mask
 
 # Cleanup
-${FSLDIR}/bin/imrm `${FSLDIR}/bin/imglob ${output}_mask????` ${output}_allones ${output}_ref
+${FSLDIR}/bin/imrm `${FSLDIR}/bin/imglob ${output}_mask????.*` ${output}_allones ${output}_ref
 
 if [ "$mcref" = "$ref" ]; then
   /bin/rm -rf ${output}.mat ${mcref2scout} 
